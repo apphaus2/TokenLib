@@ -2,10 +2,10 @@
  * The client SDK: what a library or a screen holds. It knows a broker and nothing
  * else; sessions carry a consumer name, a profile and an optional budget of their own.
  *
- * Port of TokenX `TokenClient.swift`.
+ * Port of TokenLib `TokenClient.swift`.
  */
 import type { Profile } from './catalog';
-import { estimatedPromptTokens, TokenXError, usageTotal, type ChatReply, type ChatRequest } from './chat';
+import { estimatedPromptTokens, TokenLibError, usageTotal, type ChatReply, type ChatRequest } from './chat';
 import type { TokenBroker } from './server';
 
 export class TokenClient {
@@ -47,7 +47,7 @@ export class TokenSession {
   /** Streams a reply: `onText` gets deltas as they arrive; resolves with the whole reply and usage. */
   async stream(request: ChatRequest, onText?: (delta: string) => void, signal?: AbortSignal): Promise<ChatReply> {
     const remaining = this.remaining;
-    if (remaining !== undefined && (remaining <= 0 || estimatedPromptTokens(request) >= remaining)) throw TokenXError.budgetExhausted();
+    if (remaining !== undefined && (remaining <= 0 || estimatedPromptTokens(request) >= remaining)) throw TokenLibError.budgetExhausted();
     const reply = await this.client.broker.stream(request, {
       profile: this.profile,
       consumer: this.consumer,

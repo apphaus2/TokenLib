@@ -3,7 +3,7 @@
  * what they cost, and the profiles an app asks for. Nothing here is stored;
  * the database only holds keys, a few settings and usage.
  *
- * Port of TokenX `Catalog.swift`.
+ * Port of TokenLib `Catalog.swift`.
  */
 
 export const PROVIDER_KINDS = ['anthropic', 'openai', 'gemini', 'deepseek', 'kimi', 'qwen', 'grok', 'mistral', 'cohere', 'openrouter', 'local'] as const;

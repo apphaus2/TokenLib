@@ -9,7 +9,7 @@ import {
   PlainCipher,
   TokenClient,
   TokenServer,
-  TokenXError,
+  TokenLibError,
   UsageTotals,
   type ChatRequest,
   type SecretCipher,
@@ -18,11 +18,11 @@ import { Canned, FakeTransport } from './fake-transport';
 
 const request = (text = 'sing'): ChatRequest => ({ system: 'bush', messages: [ChatMessage.user(text)] });
 
-async function failure(p: Promise<unknown>): Promise<TokenXError> {
+async function failure(p: Promise<unknown>): Promise<TokenLibError> {
   try {
     await p;
   } catch (e) {
-    if (e instanceof TokenXError) return e;
+    if (e instanceof TokenLibError) return e;
     throw e;
   }
   throw new Error('expected a failure');
@@ -174,6 +174,31 @@ describe('TokenServer', () => {
     }
     expect(await server.configuredProviders()).toEqual(['deepseek', 'kimi', 'qwen', 'grok', 'mistral', 'cohere', 'openrouter']);
     expect((await server.usageToday()).requests).toBe(7);
+  });
+
+  it('re-encrypts keys from a legacy cipher', async () => {
+    // A cipher that marks its output, so a wrong key fails the way AES-GCM's tag check does.
+    const tagged = (tag: number): SecretCipher => ({
+      async encrypt(p) {
+        return new Uint8Array([tag, ...p]);
+      },
+      async decrypt(c) {
+        if (c[0] !== tag) throw new Error('wrong key');
+        return c.slice(1);
+      },
+    });
+    const store = new InMemoryStore();
+    const old = new TokenServer(store, tagged(1), transport);
+    await old.setKey('anthropic', 'sk-a');
+    await old.setKey('openai', 'sk-o');
+    const server = new TokenServer(store, tagged(2), transport);
+    expect(await server.keysReadable(), 'the new cipher cannot read the old keys').toBe(false);
+    expect(await server.reencryptKeys(tagged(1))).toEqual(['anthropic', 'openai']);
+    expect(await server.keysReadable()).toBe(true);
+    expect(await server.key('anthropic')).toBe('sk-a');
+    expect(await server.key('openai')).toBe('sk-o');
+    expect(await server.reencryptKeys(tagged(1)), 'a second run moves nothing').toEqual([]);
+    expect(await server.key('anthropic')).toBe('sk-a');
   });
 
   it('surfaces HTTP errors and charges nothing for them', async () => {

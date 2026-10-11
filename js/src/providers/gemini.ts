@@ -1,6 +1,6 @@
 /** Google Gemini generateContent over HTTPS with server-sent events. Port of `GeminiProvider.swift`. */
 import { messageParts, type ChatEvent, type ChatMessage, type ChatRequest, type StopReason, type Usage } from '../chat';
-import { TokenXError } from '../chat';
+import { TokenLibError } from '../chat';
 import { arr, callMaxTokens, callTemperature, num, obj, parseJSONObject, str, type Provider, type ProviderCall, type ProviderStreamParser } from '../provider';
 import { httpRequest, SSEParser, type HttpRequest } from '../transport';
 
@@ -14,7 +14,7 @@ export class GeminiProvider implements Provider {
   readonly kind = 'gemini' as const;
 
   request(chat: ChatRequest, call: ProviderCall): HttpRequest {
-    if (!call.key) throw TokenXError.missingKey('gemini');
+    if (!call.key) throw TokenLibError.missingKey('gemini');
     const body: Record<string, unknown> = {
       contents: chat.messages.map((m) => ({ role: m.role === 'user' ? 'user' : 'model', parts: parts(m) })),
     };

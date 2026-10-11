@@ -3,9 +3,9 @@
  * HttpRequest and read the body line by line (server-sent events and
  * newline-delimited JSON both arrive that way).
  *
- * Port of TokenX `Transport.swift` on `fetch` + ReadableStream.
+ * Port of TokenLib `Transport.swift` on `fetch` + ReadableStream.
  */
-import { TokenXError } from './chat';
+import { TokenLibError } from './chat';
 
 export interface HttpRequest {
   url: string;
@@ -34,7 +34,7 @@ export interface StreamHandlers {
 }
 
 export interface HttpTransport {
-  /** Sends the request and streams the body; rejects with `TokenXError.http` (whole body) when the status is not 2xx. */
+  /** Sends the request and streams the body; rejects with `TokenLibError.http` (whole body) when the status is not 2xx. */
   stream(request: HttpRequest, handlers: StreamHandlers, signal?: AbortSignal): Promise<void>;
 }
 
@@ -114,12 +114,12 @@ export class FetchTransport implements HttpTransport {
     try {
       response = await this.fetchImpl(request.url, { method: request.method, headers: request.headers, body: request.body, signal });
     } catch (e) {
-      if (signal?.aborted) throw TokenXError.cancelled();
-      throw TokenXError.transport(e instanceof Error ? e.message : String(e));
+      if (signal?.aborted) throw TokenLibError.cancelled();
+      throw TokenLibError.transport(e instanceof Error ? e.message : String(e));
     }
     handlers.onStatus?.(response.status);
     if (response.status < 200 || response.status >= 300) {
-      throw TokenXError.http(response.status, await response.text().catch(() => ''));
+      throw TokenLibError.http(response.status, await response.text().catch(() => ''));
     }
     if (!response.body) return;
     const reader = response.body.getReader();
@@ -131,8 +131,8 @@ export class FetchTransport implements HttpTransport {
         if (value) for (const line of splitter.append(value)) handlers.onLine(line);
       }
     } catch (e) {
-      if (signal?.aborted) throw TokenXError.cancelled();
-      throw TokenXError.transport(e instanceof Error ? e.message : String(e));
+      if (signal?.aborted) throw TokenLibError.cancelled();
+      throw TokenLibError.transport(e instanceof Error ? e.message : String(e));
     }
     const last = splitter.flush();
     if (last !== undefined) handlers.onLine(last);

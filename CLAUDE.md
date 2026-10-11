@@ -1,4 +1,4 @@
-# TokenX
+# TokenLib
 
 Token management for apps that use AI models, in the same process as the
 app. The **server side** (`TokenServer`) knows the providers, holds API keys
@@ -7,16 +7,16 @@ The **client side** (`TokenClient` / `TokenSession`) is what a library holds:
 a session for a profile with a budget that streams replies. Consumers never
 learn which vendor or model answered.
 
-TokenX is a standalone library: it must not know about JsonMind, JsonScene or
-QRX. Adapters live with the consumers (JsonMind's `TokenXMindProvider`).
-`docs/TOKENX.md` is the reference; `docs/INTEGRATION.md` is the guide for
+TokenLib is a standalone library: it must not know about JsonMind, JsonScene or
+QRX. Adapters live with the consumers (JsonMind's TokenLib adapter).
+`docs/TOKENLIB.md` is the reference; `docs/INTEGRATION.md` is the guide for
 projects that adopt the library.
 
 ## Layout
 
 ```
-Package.swift               products TokenX, TokenXApple, TokenXUI; CSQLite system library (pkg-config sqlite3 on Linux only)
-ios/Sources/TokenX          Catalog (ProviderKind anthropic/openai/gemini/deepseek/kimi/qwen/grok/mistral/cohere/openrouter/local,
+Package.swift               products TokenLib, TokenLibApple, TokenLibUI; CSQLite system library (pkg-config sqlite3 on Linux only)
+ios/Sources/TokenLib          Catalog (ProviderKind anthropic/openai/gemini/deepseek/kimi/qwen/grok/mistral/cohere/openrouter/local,
                             ModelTier, ModelInfo, Profile
                             character/assistant/fast/vision), Chat types (ChatPart text/image, ChatMessage.parts,
                             ChatRequest.jsonSchema, ChatReply.model/provider), Transport (URLSession + SSE parser),
@@ -24,16 +24,16 @@ ios/Sources/TokenX          Catalog (ProviderKind anthropic/openai/gemini/deepse
                             OpenAI-compatible kind through a per-kind Dialect table), Store (SecretCipher,
                             KeyRepository, Settings, UsageRecord/UsageTotals, TokenStore, InMemoryStore),
                             SQLiteStore (sqlite3 C API), TokenServer, TokenClient/TokenSession
-ios/Sources/TokenXApple     KeychainCipher (CryptoKit AES-GCM, key in Keychain), TokenXBootstrap.standard(appId:),
-                            TokenXModel (ObservableObject over the server)
-ios/Sources/TokenXUI        SwiftUI pieces: TokenXSettingsSection, TokenXUsageView, TokenXUsageRow, TokenXRemainingView, TokenXStatusBadge
-ios/Tests/TokenXTests       26 tests with FakeTransport and canned SSE bodies
-android/tokenx-core         Kotlin/JVM mirror; MiniJson (no serialization dependency); JdbcSqlDatabase for tests; 26 tests
-android/tokenx-android      AndroidSqlDatabase, KeystoreCipher, TokenX.standard(context)
-android/tokenx-compose      TokenXModel (Compose state), TokenXSettings, TokenXUsage, TokenXUsageRow, TokenXRemaining, TokenXStatusBadge
-js/                         TypeScript mirror, npm package `tokenx` (Node / Workers / React Native): src/*.ts file for file
-                            with ios/Sources/TokenX, fetch + ReadableStream transport, async TokenStore, InMemoryStore,
-                            AesGcmCipher (WebCrypto, host-supplied key); no UI pieces; test/*.test.ts, 25 vitest tests
+ios/Sources/TokenLibApple     KeychainCipher (CryptoKit AES-GCM, key in Keychain), TokenLibBootstrap.standard(appId:),
+                            TokenLibModel (ObservableObject over the server)
+ios/Sources/TokenLibUI        SwiftUI pieces: TokenLibSettingsSection, TokenLibUsageView, TokenLibUsageRow, TokenLibRemainingView, TokenLibStatusBadge
+ios/Tests/TokenLibTests       28 tests with FakeTransport and canned SSE bodies
+android/tokenlib-core         Kotlin/JVM mirror; MiniJson (no serialization dependency); JdbcSqlDatabase for tests; 28 tests
+android/tokenlib-android      AndroidSqlDatabase, KeystoreCipher, TokenLib.standard(context)
+android/tokenlib-compose      TokenLibModel (Compose state), TokenLibSettings, TokenLibUsage, TokenLibUsageRow, TokenLibRemaining, TokenLibStatusBadge
+js/                         TypeScript mirror, npm package `@apphaus/tokenlib` (Node / Workers / React Native): src/*.ts file for file
+                            with ios/Sources/TokenLib, fetch + ReadableStream transport, async TokenStore, InMemoryStore,
+                            AesGcmCipher (WebCrypto, host-supplied key); no UI pieces; test/*.test.ts, 26 vitest tests
 ```
 
 ## Build and test
@@ -73,12 +73,12 @@ cd js && npm ci && npm run typecheck && npm test
   about 1,600 tokens per image. `jsonSchema` maps to Anthropic `output_config.format`, OpenAI
   `response_format` and Gemini `responseMimeType: application/json`.
 - Repository pattern over SQLite; the app is free to query for its own UI, but the
-  UI packages exist so most apps embed `TokenXSettingsSection` / `TokenXSettings` and pick up
+  UI packages exist so most apps embed `TokenLibSettingsSection` / `TokenLibSettings` and pick up
   new requirements by updating the package. UI pieces use platform controls in the host's
   theme, with no navigation or branding.
-- Speech-to-text is not TokenX's concern; it stays in the app.
+- Speech-to-text is not TokenLib's concern; it stays in the app.
 - Keep Swift, Kotlin and TypeScript in step, with tests on all three sides. The TS store API is
-  async and the TS package has no UI pieces; publishing `tokenx` to npm is a separate step.
+  async and the TS package has no UI pieces; publishing `@apphaus/tokenlib` to npm is a separate step.
 
 ## Keep the integration guide current
 
@@ -97,10 +97,14 @@ have to read the source to learn it, it belongs in the guide.
 ## Gotchas
 
 - Anything under `#if canImport(SwiftUI)` or `canImport(Combine)` is skipped on Linux, so
-  TokenXApple's model and all of TokenXUI are only compiled in Xcode. Check their API use
+  TokenLibApple's model and all of TokenLibUI are only compiled in Xcode. Check their API use
   against Store.swift and TokenServer.swift by hand, and parse-check with `swiftc -parse`.
 - The SSE parsers flush the last event in `finish()` by feeding an empty line; fixtures
   need not end with a blank line.
 - Budget and daily-cap tests use exact thresholds (budget 36, cap 36); keep the fake
   usage numbers in step when changing accounting.
 - Work lands on `master` directly; feature branches are deleted once merged.
+- The library was TokenX until October 2026. `TokenLibBootstrap.legacyDatabase` /
+  `legacyKeySuffix` (Swift) and `TokenLib.LEGACY_DATABASE` / `LEGACY_KEY_SUFFIX` (Android) keep
+  the old `tokenx` names on purpose so existing installs migrate; never rename them in a
+  find-and-replace. Section 11 of the integration guide documents the upgrade.

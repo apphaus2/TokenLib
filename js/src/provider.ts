@@ -3,7 +3,7 @@
  * streamed body back into ChatEvents. Implementations are plain HTTP: no vendor
  * SDKs, so this port behaves like the Swift and Kotlin originals.
  *
- * Port of TokenX `Provider.swift`.
+ * Port of TokenLib `Provider.swift`.
  */
 import type { ModelInfo, Profile, ProviderKind } from './catalog';
 import { ProfileInfo } from './catalog';

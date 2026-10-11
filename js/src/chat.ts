@@ -1,8 +1,8 @@
 /**
- * The request and the streamed reply, in TokenX's own terms. Providers translate
+ * The request and the streamed reply, in TokenLib's own terms. Providers translate
  * these to their wire formats; consumers never see a provider.
  *
- * Port of TokenX `Chat.swift`: text and image parts, and an optional JSON
+ * Port of TokenLib `Chat.swift`: text and image parts, and an optional JSON
  * schema for structured replies, the same as the Swift and Kotlin packages.
  */
 import type { ProviderKind } from './catalog';
@@ -100,7 +100,7 @@ export interface ChatReply {
   provider: ProviderKind;
 }
 
-export type TokenXErrorCode =
+export type TokenLibErrorCode =
   | 'noProvider'
   | 'missingKey'
   | 'budgetExhausted'
@@ -110,38 +110,38 @@ export type TokenXErrorCode =
   | 'malformed'
   | 'cancelled';
 
-export class TokenXError extends Error {
+export class TokenLibError extends Error {
   constructor(
-    public code: TokenXErrorCode,
+    public code: TokenLibErrorCode,
     message: string,
     public details: { provider?: ProviderKind; status?: number; body?: string } = {},
   ) {
     super(message);
-    this.name = 'TokenXError';
+    this.name = 'TokenLibError';
   }
 
-  static noProvider(): TokenXError {
-    return new TokenXError('noProvider', 'no AI provider is configured');
+  static noProvider(): TokenLibError {
+    return new TokenLibError('noProvider', 'no AI provider is configured');
   }
-  static missingKey(provider: ProviderKind): TokenXError {
-    return new TokenXError('missingKey', `no API key for ${provider}`, { provider });
+  static missingKey(provider: ProviderKind): TokenLibError {
+    return new TokenLibError('missingKey', `no API key for ${provider}`, { provider });
   }
-  static budgetExhausted(): TokenXError {
-    return new TokenXError('budgetExhausted', "the session's token budget is spent");
+  static budgetExhausted(): TokenLibError {
+    return new TokenLibError('budgetExhausted', "the session's token budget is spent");
   }
-  static dailyCapReached(): TokenXError {
-    return new TokenXError('dailyCapReached', 'the daily token cap is reached');
+  static dailyCapReached(): TokenLibError {
+    return new TokenLibError('dailyCapReached', 'the daily token cap is reached');
   }
-  static http(status: number, body: string): TokenXError {
-    return new TokenXError('http', `HTTP ${status}: ${body.slice(0, 200)}`, { status, body });
+  static http(status: number, body: string): TokenLibError {
+    return new TokenLibError('http', `HTTP ${status}: ${body.slice(0, 200)}`, { status, body });
   }
-  static transport(message: string): TokenXError {
-    return new TokenXError('transport', `transport: ${message}`);
+  static transport(message: string): TokenLibError {
+    return new TokenLibError('transport', `transport: ${message}`);
   }
-  static malformed(message: string): TokenXError {
-    return new TokenXError('malformed', `malformed reply: ${message}`);
+  static malformed(message: string): TokenLibError {
+    return new TokenLibError('malformed', `malformed reply: ${message}`);
   }
-  static cancelled(): TokenXError {
-    return new TokenXError('cancelled', 'cancelled');
+  static cancelled(): TokenLibError {
+    return new TokenLibError('cancelled', 'cancelled');
   }
 }

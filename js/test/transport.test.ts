@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FetchTransport, LineSplitter, SSEParser, TokenXError } from '../src';
+import { FetchTransport, LineSplitter, SSEParser, TokenLibError } from '../src';
 
 describe('LineSplitter / SSEParser', () => {
   it('splits lines across chunks and flushes the tail', () => {
@@ -40,6 +40,6 @@ describe('FetchTransport', () => {
     await t.stream({ url: 'https://x/', method: 'POST', headers: {}, body: '{}' }, { onLine: (l) => lines.push(l), onStatus: (s) => (status = s) });
     expect(status).toBe(200);
     expect(lines).toEqual(['data: 1', '', 'data: 2']);
-    await expect(t.stream({ url: 'https://x/', method: 'POST', headers: {}, body: '"fail"' }, { onLine: () => {} })).rejects.toMatchObject({ code: 'http', details: { status: 401, body: 'nope' } } satisfies Partial<TokenXError>);
+    await expect(t.stream({ url: 'https://x/', method: 'POST', headers: {}, body: '"fail"' }, { onLine: () => {} })).rejects.toMatchObject({ code: 'http', details: { status: 401, body: 'nope' } } satisfies Partial<TokenLibError>);
   });
 });

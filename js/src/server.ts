@@ -4,10 +4,10 @@
  * (keys, active provider) and build their settings screens on its query methods;
  * consumers only ever hold a TokenClient.
  *
- * Port of TokenX `TokenServer.swift`.
+ * Port of TokenLib `TokenServer.swift`.
  */
 import { Catalog, costMicros, providerNeedsKey, type ModelInfo, type Profile, type ProviderKind } from './catalog';
-import { estimatedPromptTokens, TokenXError, type ChatEvent, type ChatReply, type ChatRequest, type StopReason, type Usage } from './chat';
+import { estimatedPromptTokens, TokenLibError, type ChatEvent, type ChatReply, type ChatRequest, type StopReason, type Usage } from './chat';
 import { bytes } from './cipher';
 import type { Provider } from './provider';
 import { Providers } from './providers';
@@ -26,7 +26,7 @@ export interface StreamOptions {
 export interface TokenBroker {
   /** Whether requests can be served right now (a provider is active and, if it needs one, has a key). */
   isReady(): Promise<boolean>;
-  /** Streams a reply and resolves with the whole of it; rejects with a `TokenXError`. */
+  /** Streams a reply and resolves with the whole of it; rejects with a `TokenLibError`. */
   stream(request: ChatRequest, options: StreamOptions): Promise<ChatReply>;
 }
 
@@ -81,6 +81,40 @@ export class TokenServer implements TokenBroker {
 
   configuredProviders(): Promise<ProviderKind[]> {
     return this.store.providersWithKeys();
+  }
+
+  /**
+   * Moves every stored key from `legacy` to this server's cipher: each key `legacy` can decrypt is
+   * re-encrypted with `cipher`, and keys it cannot read are left as they are. Resolves with the providers
+   * whose keys moved. For rotating the `AesGcmCipher` secret, or moving to a cipher under new identifiers.
+   */
+  async reencryptKeys(legacy: SecretCipher): Promise<ProviderKind[]> {
+    const moved: ProviderKind[] = [];
+    for (const provider of await this.store.providersWithKeys()) {
+      const data = await this.store.keyData(provider);
+      if (!data) continue;
+      let plaintext: Uint8Array;
+      try {
+        plaintext = await legacy.decrypt(data);
+      } catch {
+        continue;
+      }
+      await this.store.setKeyData(provider, await this.cipher.encrypt(plaintext));
+      moved.push(provider);
+    }
+    return moved;
+  }
+
+  /** Whether every stored key decrypts with this server's cipher. */
+  async keysReadable(): Promise<boolean> {
+    for (const provider of await this.configuredProviders()) {
+      try {
+        await this.key(provider);
+      } catch {
+        return false;
+      }
+    }
+    return true;
   }
 
   /** Picks the provider and stores its key in one step. */
@@ -143,15 +177,15 @@ export class TokenServer implements TokenBroker {
   async stream(request: ChatRequest, options: StreamOptions): Promise<ChatReply> {
     const settings = await this.settings();
     const kind = settings.activeProvider;
-    if (!kind) throw TokenXError.noProvider();
+    if (!kind) throw TokenLibError.noProvider();
     if (settings.dailyTokenCap !== undefined) {
       const today = UsageTotals.totalTokens(await this.usageToday());
-      if (today + estimatedPromptTokens(request) >= settings.dailyTokenCap) throw TokenXError.dailyCapReached();
+      if (today + estimatedPromptTokens(request) >= settings.dailyTokenCap) throw TokenLibError.dailyCapReached();
     }
     const key = await this.key(kind);
-    if (providerNeedsKey(kind) && !key) throw TokenXError.missingKey(kind);
+    if (providerNeedsKey(kind) && !key) throw TokenLibError.missingKey(kind);
     const model = modelFor(settings, options.profile);
-    if (!model) throw TokenXError.noProvider();
+    if (!model) throw TokenLibError.noProvider();
     const provider = this.providers[kind] ?? Providers.for(kind);
     const http = provider.request(request, { model, key, baseURL: settings.localBaseURL, profile: options.profile });
     const parser = provider.makeParser();

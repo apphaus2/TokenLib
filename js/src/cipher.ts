@@ -1,6 +1,6 @@
 /**
  * AES-GCM via WebCrypto with a key the host supplies (a Worker secret, a value from a
- * device secure store). The counterpart of TokenX's KeychainCipher / KeystoreCipher
+ * device secure store). The counterpart of TokenLib's KeychainCipher / KeystoreCipher
  * for hosts without a platform keystore of their own.
  */
 import type { SecretCipher } from './store';

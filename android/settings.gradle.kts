@@ -14,8 +14,8 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "TokenX"
+rootProject.name = "TokenLib"
 
-include(":tokenx-core")
-include(":tokenx-android")
-include(":tokenx-compose")
+include(":tokenlib-core")
+include(":tokenlib-android")
+include(":tokenlib-compose")

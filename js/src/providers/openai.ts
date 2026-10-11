@@ -9,7 +9,7 @@
  */
 import { ProfileInfo, type ProviderKind } from '../catalog';
 import { messageParts, type ChatEvent, type ChatMessage, type ChatRequest, type StopReason, type Usage } from '../chat';
-import { TokenXError } from '../chat';
+import { TokenLibError } from '../chat';
 import { arr, callMaxTokens, callTemperature, num, obj, parseJSONObject, str, type Provider, type ProviderCall, type ProviderStreamParser } from '../provider';
 import { httpRequest, SSEParser, type HttpRequest } from '../transport';
 
@@ -131,11 +131,11 @@ export class OpenAIProvider implements Provider {
     const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
     let url: string;
     if (kind === 'local') {
-      if (!call.baseURL) throw TokenXError.transport('no local server URL');
+      if (!call.baseURL) throw TokenLibError.transport('no local server URL');
       url = `${call.baseURL.replace(/\/+$/, '')}/chat/completions`;
     } else {
-      if (!call.key) throw TokenXError.missingKey(kind);
-      if (!dialect.endpoint) throw TokenXError.transport(`no endpoint for ${kind}`);
+      if (!call.key) throw TokenLibError.missingKey(kind);
+      if (!dialect.endpoint) throw TokenLibError.transport(`no endpoint for ${kind}`);
       headers.Authorization = `Bearer ${call.key}`;
       url = dialect.endpoint;
     }

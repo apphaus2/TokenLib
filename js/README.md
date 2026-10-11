@@ -1,6 +1,6 @@
-# tokenx
+# @apphaus/tokenlib
 
-The TypeScript side of [TokenX](https://github.com/bclnet/TokenX): token
+The TypeScript side of [TokenLib](https://github.com/apphaus2/TokenLib): token
 management for apps that use AI models, for Node, Cloudflare Workers and React
 Native. The **server side** (`TokenServer`) knows the providers, holds API keys
 encrypted and keeps the usage ledger; the **client side** (`TokenClient` /
@@ -8,9 +8,9 @@ encrypted and keeps the usage ledger; the **client side** (`TokenClient` /
 Consumers never learn which vendor or model answered.
 
 ```ts
-import { AesGcmCipher, ChatMessage, InMemoryStore, TokenClient, TokenServer } from 'tokenx';
+import { AesGcmCipher, ChatMessage, InMemoryStore, TokenClient, TokenServer } from '@apphaus/tokenlib';
 
-const server = new TokenServer(new InMemoryStore(), new AesGcmCipher(process.env.TOKENX_CIPHER_KEY!));
+const server = new TokenServer(new InMemoryStore(), new AesGcmCipher(process.env.TOKENLIB_CIPHER_KEY!));
 await server.activate('anthropic', keyFromTheUser);              // stored encrypted, made active
 await server.update((s) => { s.dailyTokenCap = 200_000; });
 

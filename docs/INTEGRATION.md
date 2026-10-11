@@ -1,11 +1,11 @@
-# Integrating TokenX
+# Integrating TokenLib
 
-How an app or a library adds TokenX and uses it, on each platform. Read
-[TOKENX.md](TOKENX.md) for the design; this page is the how-to. Every snippet
+How an app or a library adds TokenLib and uses it, on each platform. Read
+[TOKENLIB.md](TOKENLIB.md) for the design; this page is the how-to. Every snippet
 here uses an API that exists in the package today, and CLAUDE.md asks that
 this page change in the same commit as the API it describes.
 
-TokenX splits two roles, and most projects play both:
+TokenLib splits two roles, and most projects play both:
 
 - **The host app** owns a `TokenServer`: it adds the package, bootstraps the
   server once, embeds the settings pieces so the user can enter keys and pick a
@@ -18,9 +18,9 @@ TokenX splits two roles, and most projects play both:
 
 | platform | how |
 | --- | --- |
-| iOS, macOS | Swift Package Manager, by URL: `https://github.com/bclnet/TokenX`. Products: `TokenX` (core), `TokenXApple` (Keychain cipher, bootstrap, observable model), `TokenXUI` (SwiftUI pieces). A consumer library depends on `TokenX` only. iOS 15, macOS 12 and up. |
-| Android, JVM | Gradle modules in `android/`, group `com.bclnet.tokenx`: `tokenx-core` (pure Kotlin/JVM), `tokenx-android` (Keystore cipher, Android SQLite, bootstrap; minSdk 26), `tokenx-compose` (Compose state and pieces). Until they are on a Maven repository, either `includeBuild("../TokenX/android")` with `dependencySubstitution`, or run `./gradlew publishToMavenLocal` in `android/` and depend on `com.bclnet.tokenx:tokenx-core:1.0.0` etc. with `mavenLocal()`. A JVM consumer library depends on `tokenx-core` only. |
-| Node, Workers, React Native | npm package `tokenx` in `js/`, not yet published. Install from the checkout: `npm install ../TokenX/js` (a `file:` dependency) or add it as a workspace. The package ships TypeScript sources (`src/index.ts`), so the host builds with a bundler or `tsx`/Vite/Metro that compiles TypeScript. |
+| iOS, macOS | Swift Package Manager, by URL: `https://github.com/apphaus2/TokenLib`. Products: `TokenLib` (core), `TokenLibApple` (Keychain cipher, bootstrap, observable model), `TokenLibUI` (SwiftUI pieces). A consumer library depends on `TokenLib` only. iOS 15, macOS 12 and up. |
+| Android, JVM | Gradle modules in `android/`, group `us.apphaus.tokenlib`: `tokenlib-core` (pure Kotlin/JVM), `tokenlib-android` (Keystore cipher, Android SQLite, bootstrap; minSdk 26), `tokenlib-compose` (Compose state and pieces). Until they are on a Maven repository, either `includeBuild("../TokenLib/android")` with `dependencySubstitution`, or run `./gradlew publishToMavenLocal` in `android/` and depend on `us.apphaus.tokenlib:tokenlib-core:1.0.0` etc. with `mavenLocal()`. A JVM consumer library depends on `tokenlib-core` only. |
+| Node, Workers, React Native | npm package `@apphaus/tokenlib` in `js/`, not yet published. Install from the checkout: `npm install ../TokenLib/js` (a `file:` dependency) or add it as a workspace. The package ships TypeScript sources (`src/index.ts`), so the host builds with a bundler or `tsx`/Vite/Metro that compiles TypeScript. |
 
 ## 2. Bootstrap the server once (host app)
 
@@ -30,22 +30,22 @@ the cipher key in the platform's secure store; if either cannot be opened it
 falls back to an in-memory store so the app still runs.
 
 ```swift
-import TokenXApple
-let ai = TokenXModel(appId: "net.bcl.myapp")      // wraps TokenXBootstrap.standard(appId:)
+import TokenLibApple
+let ai = TokenLibModel(appId: "us.apphaus.myapp")      // wraps TokenLibBootstrap.standard(appId:)
 // or, without the observable model:
-let server = TokenXBootstrap.standard(appId: "net.bcl.myapp")
+let server = TokenLibBootstrap.standard(appId: "us.apphaus.myapp")
 ```
 
 ```kotlin
-import com.bclnet.tokenx.compose.TokenXModel
-val ai = TokenXModel(context)                      // wraps TokenX.standard(context): noBackupFilesDir/tokenx.sqlite, KeystoreCipher
+import us.apphaus.tokenlib.compose.TokenLibModel
+val ai = TokenLibModel(context)                      // wraps TokenLib.standard(context): noBackupFilesDir/tokenlib.sqlite, KeystoreCipher
 // or, without the Compose model:
-val server = TokenX.standard(context)
+val server = TokenLib.standard(context)
 ```
 
 ```ts
-import { AesGcmCipher, TokenServer } from 'tokenx';
-const server = new TokenServer(store, new AesGcmCipher(process.env.TOKENX_CIPHER_KEY!));
+import { AesGcmCipher, TokenServer } from '@apphaus/tokenlib';
+const server = new TokenServer(store, new AesGcmCipher(process.env.TOKENLIB_CIPHER_KEY!));
 // AesGcmCipher.generateSecret() makes a key once; keep it in the host's secret store (a Worker secret, a device keychain).
 ```
 
@@ -67,18 +67,18 @@ local server URL and model, prompt logging, the daily cap's today line, and
 the credit the user read off the provider's billing page.
 
 ```swift
-import TokenXUI
+import TokenLibUI
 Form {
-    TokenXSettingsSection(model: ai)                 // title: defaults to "AI provider"
+    TokenLibSettingsSection(model: ai)                 // title: defaults to "AI provider"
 }
-TokenXStatusBadge(model: ai)                         // a readiness dot for a toolbar
-TokenXRemainingView(model: ai)                       // credit left, else tokens left under the cap, else today's usage
-TokenXUsageView(model: ai)                           // today's and 30-day totals, recent requests, clear
+TokenLibStatusBadge(model: ai)                         // a readiness dot for a toolbar
+TokenLibRemainingView(model: ai)                       // credit left, else tokens left under the cap, else today's usage
+TokenLibUsageView(model: ai)                           // today's and 30-day totals, recent requests, clear
 ```
 
 ```kotlin
-Column { TokenXSettings(ai) }                        // title = null leaves the heading to the host
-TokenXStatusBadge(ai); TokenXRemaining(ai); TokenXUsage(ai)
+Column { TokenLibSettings(ai) }                        // title = null leaves the heading to the host
+TokenLibStatusBadge(ai); TokenLibRemaining(ai); TokenLibUsage(ai)
 ```
 
 The pieces use platform controls in the host's theme and bring no navigation
@@ -88,7 +88,7 @@ The providers a user can pick, each with its own API key: Anthropic, OpenAI,
 Google Gemini, DeepSeek, Kimi (Moonshot), Qwen (Alibaba Cloud Model Studio),
 Grok (xAI), Mistral, Cohere and OpenRouter; plus `local`, an OpenAI-compatible
 server reached by URL with no key. Which models each one runs, and at what
-price, is the catalog's opinion (see TOKENX.md); the host never chooses.
+price, is the catalog's opinion (see TOKENLIB.md); the host never chooses.
 
 To draw your own UI instead, everything the pieces use is public on the
 server and the model: `activate(provider, key:)`, `removeKey(for:)`,
@@ -107,7 +107,7 @@ try server.update { $0.logPrompts = true }           // keep the last user messa
 
 ## 4. Hand out clients (host app)
 
-Consumers get a `TokenClient`, never the server. `TokenXModel` carries one as
+Consumers get a `TokenClient`, never the server. `TokenLibModel` carries one as
 `ai.client`; otherwise make one with `TokenClient(broker: server)`. The client
 only knows the `TokenBroker` interface, so a host could later swap the
 in-process server for a remote broker without touching consumers.
@@ -148,7 +148,7 @@ session.send(request) { result in }                  // the whole reply at once
 ```kotlin
 val session = ai.client.session("bush", Profile.CHARACTER, budget = 20_000)
 session.stream(ChatRequest(persona, listOf(ChatMessage.user("sing"))), { delta -> speak(delta) }) { result ->
-    result.onSuccess { reply -> }.onFailure { e -> /* TokenXException */ }
+    result.onSuccess { reply -> }.onFailure { e -> /* TokenLibException */ }
 }
 ```
 
@@ -237,7 +237,7 @@ Do not hit the network in tests. Build a server on `InMemoryStore` and
 `PlainCipher` with a fake transport that serves canned server-sent-event
 bodies, activate a provider with any key, and drive the consumer through a
 real `TokenClient`. The repository's own tests (`FakeTransport` and `Canned` in
-`ios/Tests/TokenXTests`, `android/tokenx-core/src/test`, `js/test`) are the
+`ios/Tests/TokenLibTests`, `android/tokenlib-core/src/test`, `js/test`) are the
 template; copying those two files into a consumer's test target is the
 intended use.
 
@@ -251,21 +251,69 @@ A consumer library can also implement `TokenBroker` itself for a pure stub.
 
 ## 10. Writing an adapter
 
-TokenX knows nothing about the libraries that use it; the adapter lives with
+TokenLib knows nothing about the libraries that use it; the adapter lives with
 the consumer. The shape that has worked: the library declares a small provider
 interface of its own (for example "stream a reply for this persona and
 transcript"), and the adapter implements it by holding a `TokenClient`, opening
 one `TokenSession` per actor or screen with a budget, and mapping the
 library's turns to `ChatMessage`s. Keep the adapter thin: no vendor or model
-names, no keys, and no catalog lookups. If the adapter needs something TokenX
-does not expose, that is a TokenX change, not an adapter workaround.
+names, no keys, and no catalog lookups. If the adapter needs something TokenLib
+does not expose, that is a TokenLib change, not an adapter workaround.
+
+## 11. Upgrading from TokenX
+
+The library was called TokenX before it moved to `github.com/apphaus2/TokenLib`.
+Every public name changed with it; behaviour did not.
+
+| what | was | is |
+| --- | --- | --- |
+| Swift products and modules | `TokenX`, `TokenXApple`, `TokenXUI` | `TokenLib`, `TokenLibApple`, `TokenLibUI` |
+| Gradle modules | `tokenx-core`, `tokenx-android`, `tokenx-compose`, group `com.bclnet.tokenx` | `tokenlib-core`, `tokenlib-android`, `tokenlib-compose`, group `us.apphaus.tokenlib` |
+| Kotlin packages | `com.bclnet.tokenx`, `.android`, `.compose` | `us.apphaus.tokenlib`, `.android`, `.compose` |
+| npm package | `tokenx` | `@apphaus/tokenlib` |
+| types with the library's name | `TokenXError`, `TokenXException`, `TokenXModel`, `TokenXBootstrap`, `TokenX` (Android bootstrap), `TokenXSettingsSection`, `TokenXSettings`, `TokenXUsage`, `TokenXUsageView`, `TokenXUsageRow`, `TokenXRemaining`, `TokenXRemainingView`, `TokenXStatusBadge` | the same with `TokenLib` in place of `TokenX` |
+
+`TokenServer`, `TokenClient`, `TokenSession` and the chat types keep their
+names. Update the package reference, then replace `TokenX` with `TokenLib` in
+imports and type names, and `com.bclnet.tokenx` with `us.apphaus.tokenlib` in
+Kotlin imports.
+
+Stored data moves by itself. The standard bootstrap on Apple and Android
+renames the old `tokenx.sqlite` to `tokenlib.sqlite` on the first launch after
+the update, re-encrypts the stored API keys from the old Keychain or Keystore
+key (`<appId>.tokenx`) to the new one (`<appId>.tokenlib`), and removes the old
+key once every stored key reads back. A launch that cannot reach the Keychain,
+such as a background launch before first unlock, leaves the old key in place
+and retries next time. Settings, credit and usage history come along with the
+file.
+
+A host that built its own server instead of using the bootstrap does the same
+two steps itself, before the server is used:
+
+```swift
+try SQLiteStore.moveDatabase(from: oldPath, to: newPath)               // false when there is nothing to move
+let server = TokenServer(store: try SQLiteStore(path: newPath), cipher: KeychainCipher(service: "us.apphaus.tokenlib"))
+let legacy = KeychainCipher(service: "com.bclnet.tokenx")              // the old default service
+if legacy.hasKey { try server.reencryptKeys(from: legacy); if server.keysReadable { try legacy.deleteKey() } }
+```
+
+```kotlin
+SQLiteStore.moveDatabase(oldFile, newFile)
+val legacy = KeystoreCipher("com.bclnet.tokenx.secret-key")            // the old default alias
+if (legacy.hasKey()) { server.reencryptKeys(legacy); if (server.keysReadable) legacy.deleteKey() }
+```
+
+`reencryptKeys` is also how a TypeScript host rotates its `AesGcmCipher`
+secret: build the server with the new cipher and call
+`await server.reencryptKeys(new AesGcmCipher(oldSecret))`.
 
 ## Checklist for a new integration
 
 1. Package added; a consumer library depends on the core product only.
-2. One server bootstrapped at launch; `TokenXModel` kept for the app's lifetime.
+2. One server bootstrapped at launch; `TokenLibModel` kept for the app's lifetime.
 3. Settings piece embedded; the user can enter a key and see today's usage.
 4. Consumers receive a `TokenClient`, open sessions with a profile and a budget.
 5. Errors mapped to the table in section 7; `noProvider` and `missingKey` lead to settings.
 6. Images use `user(parts:)`; parsed replies use `jsonSchema` and still validate.
 7. Tests use `InMemoryStore`, `PlainCipher` and a fake transport.
+8. A project that used TokenX has followed section 11: new package names, new imports, and a release that runs the bootstrap once.

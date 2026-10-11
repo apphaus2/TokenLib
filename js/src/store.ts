@@ -3,7 +3,7 @@
  * in-memory store for tests. Keys are stored as ciphertext; the cipher is the host's
  * (Keychain / Keystore on devices, a server secret in a Worker).
  *
- * Port of TokenX `Store.swift`; every method is async so SQL-over-the-network stores fit.
+ * Port of TokenLib `Store.swift`; every method is async so SQL-over-the-network stores fit.
  */
 import { PROVIDER_KINDS, type Profile, type ProviderKind } from './catalog';
 import type { StopReason } from './chat';
@@ -31,9 +31,9 @@ export interface KeyRepository {
 }
 
 /**
- * A provider balance the user read off the provider's billing page, and what TokenX has
+ * A provider balance the user read off the provider's billing page, and what TokenLib has
  * charged that provider since. Providers do not report balances to API keys, so this is
- * TokenX's own count: use of the key elsewhere is not seen.
+ * TokenLib's own count: use of the key elsewhere is not seen.
  */
 export interface Credit {
   /** The balance entered, in millionths of a dollar. */

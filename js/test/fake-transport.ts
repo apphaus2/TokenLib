@@ -1,19 +1,19 @@
-import { LineSplitter, TokenXError, type HttpRequest, type HttpTransport, type StreamHandlers } from '../src';
+import { LineSplitter, TokenLibError, type HttpRequest, type HttpTransport, type StreamHandlers } from '../src';
 
 /** Serves canned bodies by URL host, line by line, the way a streaming server would. */
 export class FakeTransport implements HttpTransport {
   responses: Record<string, { status: number; body: string }> = {};
   requests: HttpRequest[] = [];
-  failWith?: TokenXError;
+  failWith?: TokenLibError;
 
   async stream(request: HttpRequest, handlers: StreamHandlers): Promise<void> {
     this.requests.push(request);
     if (this.failWith) throw this.failWith;
     const host = new URL(request.url).host;
     const response = this.responses[host];
-    if (!response) throw TokenXError.http(404, `no canned response for ${request.url}`);
+    if (!response) throw TokenLibError.http(404, `no canned response for ${request.url}`);
     handlers.onStatus?.(response.status);
-    if (response.status < 200 || response.status >= 300) throw TokenXError.http(response.status, response.body);
+    if (response.status < 200 || response.status >= 300) throw TokenLibError.http(response.status, response.body);
     const splitter = new LineSplitter();
     for (const line of splitter.append(new TextEncoder().encode(response.body))) handlers.onLine(line);
     const last = splitter.flush();

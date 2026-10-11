@@ -1,7 +1,7 @@
 /** Anthropic Messages API over HTTPS with server-sent events. Port of `AnthropicProvider.swift`. */
 import { ProfileInfo } from '../catalog';
 import { messageParts, type ChatEvent, type ChatMessage, type ChatRequest, type StopReason, type Usage } from '../chat';
-import { TokenXError } from '../chat';
+import { TokenLibError } from '../chat';
 import { callMaxTokens, callTemperature, num, obj, parseJSONObject, str, type Provider, type ProviderCall, type ProviderStreamParser } from '../provider';
 import { httpRequest, SSEParser, type HttpRequest } from '../transport';
 
@@ -17,7 +17,7 @@ export class AnthropicProvider implements Provider {
   readonly kind = 'anthropic' as const;
 
   request(chat: ChatRequest, call: ProviderCall): HttpRequest {
-    if (!call.key) throw TokenXError.missingKey('anthropic');
+    if (!call.key) throw TokenLibError.missingKey('anthropic');
     const body: Record<string, unknown> = {
       model: call.model.id,
       max_tokens: callMaxTokens(call, chat),

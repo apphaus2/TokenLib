@@ -1,12 +1,12 @@
 {
-  "name": "tokenx",
+  "name": "@apphaus/tokenlib",
   "version": "0.1.0",
   "private": true,
-  "description": "Token management for apps that use AI models: providers over plain HTTPS + SSE, a model catalog and profiles, encrypted keys, a usage ledger and caps. The TypeScript side of TokenX.",
+  "description": "Token management for apps that use AI models: providers over plain HTTPS + SSE, a model catalog and profiles, encrypted keys, a usage ledger and caps. The TypeScript side of TokenLib.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/bclnet/TokenX.git",
+    "url": "https://github.com/apphaus2/TokenLib.git",
     "directory": "js"
   },
   "type": "module",
