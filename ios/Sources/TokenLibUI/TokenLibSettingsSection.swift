@@ -47,7 +47,11 @@ public struct TokenLibSettingsSection: View {
                         .keyboardType(.decimalPad)
                         #endif
                     Button("Set") { model.setCredit(creditAmount, for: provider); credit = "" }
-                        .buttonStyle(.borderless).disabled(creditAmount == nil)
+                        // tvOS has .borderless only from 17, and the focus engine reaches a row's buttons anyway.
+                        #if !os(tvOS)
+                        .buttonStyle(.borderless)
+                        #endif
+                        .disabled(creditAmount == nil)
                 }
             } else {
                 TextField("Server URL, e.g. http://192.168.1.20:11434/v1", text: $localURL)
