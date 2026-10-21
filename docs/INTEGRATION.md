@@ -56,15 +56,18 @@ The TypeScript side has no bootstrap because it has no fixed database: pass a
 To build your own server on Apple or Android, compose the parts directly:
 `TokenServer(store: try SQLiteStore(path:), cipher: KeychainCipher())` /
 `TokenServer(SQLiteStore(AndroidSqlDatabase(db)), KeystoreCipher())`. A custom
-`HttpTransport` is the third argument (tests use a fake; see section 9).
+`HttpTransport` is the third argument (tests use a fake; see section 9). On
+Apple, follow it with `TokenLibBootstrap.registerPlatformProviders(on: server)`
+so Apple Intelligence is offered (section 3); `standard` does that itself.
 
 ## 3. Let the user configure it (host app)
 
-The server is not ready until a provider is active and has what it needs: an
-API key, or for `local` a base URL. Embed the settings piece in your own
-settings screen and you are done; it lists every provider, takes the key,
-local server URL and model, prompt logging, the daily cap's today line, and
-the credit the user read off the provider's billing page.
+The server is not ready until AI is enabled and a provider is active with what
+it needs: an API key, for `local` a base URL, for `apple` a device that can run
+it. Embed the settings piece in your own settings screen and you are done; it
+starts with the master switch, then lists every provider this device can use,
+takes the key, local server URL and model, prompt logging, the daily cap's
+today line, and the credit the user read off the provider's billing page.
 
 ```swift
 import TokenLibUI
@@ -84,23 +87,53 @@ TokenLibStatusBadge(ai); TokenLibRemaining(ai); TokenLibUsage(ai)
 The pieces use platform controls in the host's theme and bring no navigation
 or branding. Call `ai.refresh()` after a request so the usage lines update.
 
+**The master switch.** The section's first row is "Enable AI"
+(`Settings.enabled`, on by default). Off, the rest of the section folds away,
+`isReady` is false and every request fails with `disabled` before anything is
+sent; keys, the chosen provider and usage stay as they were, so turning it back
+on restores everything. A host that wants the switch somewhere else (a main
+screen, an onboarding step) calls `ai.setEnabled(_:)` / `ai.isEnabled`
+(`server.setEnabled(on)`, `server.isEnabled` in Kotlin; `await server.setEnabled(on)`,
+`await server.isEnabled()` in TypeScript). The status badge reads "AI off" while
+it is down.
+
 The providers a user can pick, each with its own API key: Anthropic, OpenAI,
 Google Gemini, DeepSeek, Kimi (Moonshot), Qwen (Alibaba Cloud Model Studio),
-Grok (xAI), Mistral, Cohere and OpenRouter; plus `local`, an OpenAI-compatible
-server reached by URL with no key. Which models each one runs, and at what
-price, is the catalog's opinion (see TOKENLIB.md); the host never chooses.
+Grok (xAI), Mistral, Cohere and OpenRouter; plus two that need no key: `local`,
+an OpenAI-compatible server reached by URL, and `apple`, Apple Intelligence.
+Which models each one runs, and at what price, is the catalog's opinion (see
+TOKENLIB.md); the host never chooses.
+
+**Apple Intelligence** (`ProviderKind.apple`) is Apple's on-device foundation
+model, answered in-process by the Foundation Models framework on iOS 26, macOS 26
+and visionOS 26: no key, no network, nothing leaves the device, nothing is
+charged. `TokenLibBootstrap.standard` registers it when the app is built with
+Xcode 26 or later, and the settings section offers it only on a device that
+has it. Whether the device can answer right now is Apple's call (eligible
+hardware, Apple Intelligence turned on, model downloaded):
+`ai.unavailableReason(for: .apple)` says why not, in words the section shows
+as its footer, and a request on an unavailable device fails with
+`unavailable(.apple)`. It is a small text-only model: image parts are dropped,
+`jsonSchema` is asked for in the prompt rather than enforced, there are no
+token counts (usage rows carry estimates) and the context window is about 4k
+tokens, so keep transcripts short. Kotlin and TypeScript know the kind so the
+three catalogs stay in step, but no Android or JavaScript host serves it;
+`availableProviders` leaves it out there.
 
 To draw your own UI instead, everything the pieces use is public on the
-server and the model: `activate(provider, key:)`, `removeKey(for:)`,
-`setLocalServer(url:model:)`, `setCredit(dollars, for:)`, `update { settings in }`,
-`configuredProviders`, `isReady`, `model(for: profile)`, `usageToday()`,
-`remainingToday()`, `credit(for:)`, `recentUsage(limit:)`,
-`usage(since:consumer:)`, `ProviderKind.allCases`, `Catalog.models(for:)`.
-The TypeScript server has the same methods, all `async`.
+server and the model: `setEnabled(_:)`, `isEnabled`, `activate(provider, key:)`,
+`removeKey(for:)`, `setLocalServer(url:model:)`, `setCredit(dollars, for:)`,
+`update { settings in }`, `availableProviders` (the kinds to offer on this
+device), `unavailableReason(for:)`, `configuredProviders`, `isReady`,
+`model(for: profile)`, `usageToday()`, `remainingToday()`, `credit(for:)`,
+`recentUsage(limit:)`, `usage(since:consumer:)`, `ProviderKind.allCases`,
+`Catalog.models(for:)`. The TypeScript server has the same methods, all `async`
+except `availableProviders()` and `unavailableReason(kind)`.
 
 Settings a host may want to set itself:
 
 ```swift
+try server.update { $0.enabled = false }             // the master switch; nothing is sent while it is off
 try server.update { $0.dailyTokenCap = 200_000 }     // tokens per calendar day across every consumer; nil is unlimited
 try server.update { $0.logPrompts = true }           // keep the last user message and the reply on each usage row (off by default)
 ```
@@ -200,8 +233,10 @@ with no request made.
 
 | error | meaning | what a consumer does |
 | --- | --- | --- |
+| `disabled` | the user turned AI off | nothing, or point them at the switch in settings |
 | `noProvider` | the user has not picked a provider | point them at the settings screen |
 | `missingKey(provider)` | the active provider has no key | same |
+| `unavailable(provider)` | Apple Intelligence is active but this device cannot answer (not eligible, turned off in system settings, model not downloaded) or this build has no native provider | show `server.unavailableReason(for:)`; suggest another provider |
 | `budgetExhausted` | this session's budget is spent or the prompt would not fit | open a new session, or stop |
 | `dailyCapReached` | the app-wide cap for today | tell the user; `server.remainingToday()` says how much was left |
 | `http(status, body)` | the provider refused (bad key, rate limit, bad request) | show the body's message |
@@ -313,7 +348,7 @@ secret: build the server with the new cipher and call
 2. One server bootstrapped at launch; `TokenLibModel` kept for the app's lifetime.
 3. Settings piece embedded; the user can enter a key and see today's usage.
 4. Consumers receive a `TokenClient`, open sessions with a profile and a budget.
-5. Errors mapped to the table in section 7; `noProvider` and `missingKey` lead to settings.
+5. Errors mapped to the table in section 7; `disabled`, `noProvider`, `missingKey` and `unavailable` lead to settings.
 6. Images use `user(parts:)`; parsed replies use `jsonSchema` and still validate.
 7. Tests use `InMemoryStore`, `PlainCipher` and a fake transport.
 8. A project that used TokenX has followed section 11: new package names, new imports, and a release that runs the bootstrap once.

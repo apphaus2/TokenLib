@@ -54,6 +54,8 @@ export const Credit = {
 };
 
 export interface Settings {
+  /** The master switch: off means no request is sent anywhere, whatever else is configured (on by default). */
+  enabled: boolean;
   /** The provider requests go to; `undefined` until the app picks one. */
   activeProvider?: ProviderKind;
   /** For `local`: the OpenAI-compatible server, e.g. `http://192.168.1.20:11434/v1`. */
@@ -69,12 +71,13 @@ export interface Settings {
 }
 
 export function defaultSettings(): Settings {
-  return { logPrompts: false, credits: {} };
+  return { enabled: true, logPrompts: false, credits: {} };
 }
 
 /** Settings as flat key/value pairs, the shape the SQL stores keep (port of `SQLiteStore.save`). */
 export function settingsToPairs(s: Settings): [string, string | undefined][] {
   const pairs: [string, string | undefined][] = [
+    ['enabled', s.enabled ? '1' : '0'],
     ['activeProvider', s.activeProvider],
     ['localBaseURL', s.localBaseURL],
     ['localModel', s.localModel],
@@ -93,6 +96,9 @@ export function settingsFromPairs(rows: Iterable<[string, string | undefined | n
   for (const [key, raw] of rows) {
     const value = raw ?? undefined;
     switch (key) {
+      case 'enabled':
+        s.enabled = value !== '0';
+        break;
       case 'activeProvider':
         s.activeProvider = (PROVIDER_KINDS as readonly string[]).includes(value ?? '') ? (value as ProviderKind) : undefined;
         break;

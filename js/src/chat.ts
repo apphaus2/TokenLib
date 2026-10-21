@@ -101,8 +101,10 @@ export interface ChatReply {
 }
 
 export type TokenLibErrorCode =
+  | 'disabled'
   | 'noProvider'
   | 'missingKey'
+  | 'unavailable'
   | 'budgetExhausted'
   | 'dailyCapReached'
   | 'http'
@@ -120,11 +122,19 @@ export class TokenLibError extends Error {
     this.name = 'TokenLibError';
   }
 
+  /** `Settings.enabled` is off: nothing is sent anywhere. */
+  static disabled(): TokenLibError {
+    return new TokenLibError('disabled', 'AI is turned off');
+  }
   static noProvider(): TokenLibError {
     return new TokenLibError('noProvider', 'no AI provider is configured');
   }
   static missingKey(provider: ProviderKind): TokenLibError {
     return new TokenLibError('missingKey', `no API key for ${provider}`, { provider });
+  }
+  /** A native provider (Apple Intelligence) is active but cannot answer on this device or build. */
+  static unavailable(provider: ProviderKind): TokenLibError {
+    return new TokenLibError('unavailable', `${provider} is not available on this device`, { provider });
   }
   static budgetExhausted(): TokenLibError {
     return new TokenLibError('budgetExhausted', "the session's token budget is spent");

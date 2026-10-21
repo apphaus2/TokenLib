@@ -40,6 +40,82 @@ class ServerTest {
         assertTrue(server.isReady)
     }
 
+    @Test fun disabledRefusesEveryRequestAndKeepsSettings() {
+        server.activate(ProviderKind.ANTHROPIC, "sk-live")
+        assertTrue(server.isEnabled)
+        assertTrue(server.isReady)
+        server.setEnabled(false)
+        assertFalse(server.isEnabled)
+        assertFalse(server.isReady)
+        val client = TokenClient(server)
+        var (result, _) = stream(client.session("bush", Profile.CHARACTER))
+        assertTrue(result!!.exceptionOrNull() is TokenLibException.Disabled)
+        assertEquals(0, transport.requests.size)
+        assertEquals(0, server.usageToday().requests)
+        assertTrue(server.hasKey(ProviderKind.ANTHROPIC))
+        assertEquals(ProviderKind.ANTHROPIC, server.settings.activeProvider)
+        server.setEnabled(true)
+        assertTrue(server.isReady)
+        result = stream(client.session("bush", Profile.CHARACTER)).first
+        assertEquals("Ask, and the bush shall sing.", result!!.getOrThrow().text)
+    }
+
+    private class FakeNative : NativeProvider {
+        override val kind = ProviderKind.APPLE
+        override var isAvailable = false
+        override val unavailableReason: String? get() = if (isAvailable) null else "Turn on Apple Intelligence in Settings."
+        val calls = ArrayList<Pair<ChatRequest, ProviderCall>>()
+        override fun stream(chat: ChatRequest, call: ProviderCall, onEvent: (ChatEvent) -> Unit, completion: (Result<Unit>) -> Unit): Cancellable {
+            calls += chat to call
+            onEvent(ChatEvent.Text("On "))
+            onEvent(ChatEvent.Text("device."))
+            onEvent(ChatEvent.Done(Usage(), StopReason.END))
+            completion(Result.success(Unit))
+            return NoopCancellable
+        }
+    }
+
+    @Test fun nativeProviderServesAppleWithoutAKeyOrTheNetwork() {
+        assertFalse(ProviderKind.APPLE in server.availableProviders)
+        assertEquals("Apple Intelligence is not available on this platform.", server.unavailableReason(ProviderKind.APPLE))
+        assertNull(server.unavailableReason(ProviderKind.ANTHROPIC))
+        server.activate(ProviderKind.APPLE)
+        assertFalse(server.isReady)
+        val client = TokenClient(server)
+        var (result, _) = stream(client.session("bush", Profile.CHARACTER))
+        assertEquals(TokenLibException.Unavailable(ProviderKind.APPLE), result!!.exceptionOrNull())
+
+        val native = FakeNative()
+        server.nativeProviders[ProviderKind.APPLE] = native
+        assertTrue(ProviderKind.APPLE in server.availableProviders)
+        assertFalse(server.isReady)
+        assertEquals("Turn on Apple Intelligence in Settings.", server.unavailableReason(ProviderKind.APPLE))
+        result = stream(client.session("bush", Profile.CHARACTER)).first
+        assertEquals(TokenLibException.Unavailable(ProviderKind.APPLE), result!!.exceptionOrNull())
+
+        native.isAvailable = true
+        assertTrue(server.isReady)
+        assertNull(server.unavailableReason(ProviderKind.APPLE))
+        assertEquals("apple-on-device", server.model(Profile.ASSISTANT)?.id)
+        val session = client.session("bush", Profile.CHARACTER, budget = 1000)
+        val (r, deltas) = stream(session)
+        val reply = r!!.getOrThrow()
+        assertEquals("On device.", reply.text)
+        assertEquals(listOf("On ", "device."), deltas)
+        assertEquals(ProviderKind.APPLE, reply.provider)
+        assertEquals(3, reply.usage.replyTokens)
+        assertTrue(reply.usage.promptTokens > 0)
+        assertEquals(reply.usage.total, session.spent)
+        assertEquals(0, transport.requests.size)
+        assertEquals(1, native.calls.size)
+        assertNull(native.calls[0].second.key)
+        assertEquals(Profile.CHARACTER, native.calls[0].second.profile)
+        val row = server.recentUsage().first()
+        assertEquals(ProviderKind.APPLE, row.provider)
+        assertEquals("apple-on-device", row.model)
+        assertEquals(0L, row.costMicros)
+    }
+
     @Test fun streamsRecordsUsageAndEncryptsKeys() {
         val xor = object : SecretCipher {
             override fun encrypt(plaintext: ByteArray) = ByteArray(plaintext.size) { (plaintext[it].toInt() xor 0x2A).toByte() }

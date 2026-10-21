@@ -34,7 +34,21 @@ public protocol ProviderStreamParser {
     mutating func finish() -> [ChatEvent]
 }
 
+/// A provider that answers in-process instead of over HTTP: Apple's on-device model, registered on the
+/// server by the platform bootstrap (`TokenServer.nativeProviders`). It streams `ChatEvent`s itself; the
+/// server still does the accounting. The core knows the kind (`ProviderKind.apple`) and this seam only.
+public protocol NativeProvider: AnyObject {
+    var kind: ProviderKind { get }
+    /// Whether the model can answer right now (the device is eligible, the feature is on, the model is downloaded).
+    var isAvailable: Bool { get }
+    /// Why not, in words for a settings screen; `nil` when available.
+    var unavailableReason: String? { get }
+    /// Streams the reply as `.text` deltas and ends with `.done`; `completion` then reports success or a `TokenLibError`.
+    func stream(_ chat: ChatRequest, call: ProviderCall, onEvent: @escaping (ChatEvent) -> Void, completion: @escaping (Result<Void, TokenLibError>) -> Void) -> Cancellable
+}
+
 public enum Providers {
+    /// The HTTP provider for a kind; native kinds have none (`NativeProvider`).
     public static func provider(for kind: ProviderKind) -> Provider {
         switch kind {
         case .anthropic: return AnthropicProvider()

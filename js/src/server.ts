@@ -6,10 +6,10 @@
  *
  * Port of TokenLib `TokenServer.swift`.
  */
-import { Catalog, costMicros, providerNeedsKey, type ModelInfo, type Profile, type ProviderKind } from './catalog';
+import { Catalog, costMicros, PROVIDER_KINDS, providerIsNative, providerNeedsKey, type ModelInfo, type Profile, type ProviderKind } from './catalog';
 import { estimatedPromptTokens, TokenLibError, type ChatEvent, type ChatReply, type ChatRequest, type StopReason, type Usage } from './chat';
 import { bytes } from './cipher';
-import type { Provider } from './provider';
+import type { NativeProvider, Provider } from './provider';
 import { Providers } from './providers';
 import { FetchTransport, type HttpTransport } from './transport';
 import { UsageTotals, type Credit, type SecretCipher, type Settings, type TokenStore, type UsageRecord } from './store';
@@ -33,6 +33,8 @@ export interface TokenBroker {
 export class TokenServer implements TokenBroker {
   /** Overrides the catalog's providers (tests inject fakes). */
   providers: Partial<Record<ProviderKind, Provider>> = {};
+  /** In-process providers by kind, registered per platform; a native kind with no entry here is not offered. */
+  nativeProviders: Partial<Record<ProviderKind, NativeProvider>> = {};
   /** The start of "today" for the daily cap, as ISO; midnight UTC by default. */
   dayStart: () => string = () => {
     const d = new Date();
@@ -125,11 +127,39 @@ export class TokenServer implements TokenBroker {
     });
   }
 
+  /** Turns every request on or off; `Settings.enabled` underneath. */
+  async setEnabled(on: boolean): Promise<void> {
+    await this.update((s) => {
+      s.enabled = on;
+    });
+  }
+
+  async isEnabled(): Promise<boolean> {
+    return (await this.settings()).enabled;
+  }
+
   async isReady(): Promise<boolean> {
     const s = await this.settings();
-    if (!s.activeProvider) return false;
+    if (!s.enabled || !s.activeProvider) return false;
+    if (providerIsNative(s.activeProvider)) return this.nativeProviders[s.activeProvider]?.isAvailable ?? false;
     if (s.activeProvider === 'local') return !!s.localBaseURL;
     return this.hasKey(s.activeProvider);
+  }
+
+  /** The kinds a settings screen offers on this host: every HTTP provider, plus the native ones registered here. */
+  availableProviders(): ProviderKind[] {
+    return PROVIDER_KINDS.filter((k) => !providerIsNative(k) || this.nativeProviders[k] !== undefined);
+  }
+
+  /**
+   * Why a native provider cannot answer right now, or that this build has none; `undefined` for HTTP providers and
+   * for a native one that is available.
+   */
+  unavailableReason(kind: ProviderKind): string | undefined {
+    if (!providerIsNative(kind)) return undefined;
+    const native = this.nativeProviders[kind];
+    if (!native) return `${kind} is not available on this platform.`;
+    return native.isAvailable ? undefined : native.unavailableReason;
   }
 
   /** The model a profile will run on right now. */
@@ -176,6 +206,7 @@ export class TokenServer implements TokenBroker {
 
   async stream(request: ChatRequest, options: StreamOptions): Promise<ChatReply> {
     const settings = await this.settings();
+    if (!settings.enabled) throw TokenLibError.disabled();
     const kind = settings.activeProvider;
     if (!kind) throw TokenLibError.noProvider();
     if (settings.dailyTokenCap !== undefined) {
@@ -186,9 +217,7 @@ export class TokenServer implements TokenBroker {
     if (providerNeedsKey(kind) && !key) throw TokenLibError.missingKey(kind);
     const model = modelFor(settings, options.profile);
     if (!model) throw TokenLibError.noProvider();
-    const provider = this.providers[kind] ?? Providers.for(kind);
-    const http = provider.request(request, { model, key, baseURL: settings.localBaseURL, profile: options.profile });
-    const parser = provider.makeParser();
+    const call = { model, key, baseURL: settings.localBaseURL, profile: options.profile };
     let text = '';
     let done: { usage: Usage; stop: StopReason } | undefined;
     const deliver = (event: ChatEvent) => {
@@ -196,8 +225,18 @@ export class TokenServer implements TokenBroker {
       else if (!done) done = { usage: event.usage, stop: event.stop };
       options.onEvent?.(event);
     };
-    await this.transport.stream(http, { onLine: (line) => parser.feed(line).forEach(deliver) }, options.signal);
-    parser.finish().forEach(deliver);
+    if (providerIsNative(kind)) {
+      const native = this.nativeProviders[kind];
+      if (!native?.isAvailable) throw TokenLibError.unavailable(kind);
+      await native.stream(request, call, deliver, options.signal);
+    } else {
+      const provider = this.providers[kind] ?? Providers.for(kind);
+      const http = provider.request(request, call);
+      const parser = provider.makeParser();
+      await this.transport.stream(http, { onLine: (line) => parser.feed(line).forEach(deliver) }, options.signal);
+      parser.finish().forEach(deliver);
+    }
+    // Everything after the provider answers is the same for both paths: fill in estimates, record usage, charge credit.
     const usage: Usage = { ...(done?.usage ?? { promptTokens: 0, replyTokens: 0 }) };
     const stop = done?.stop ?? 'other';
     if (usage.promptTokens === 0) usage.promptTokens = estimatedPromptTokens(request);

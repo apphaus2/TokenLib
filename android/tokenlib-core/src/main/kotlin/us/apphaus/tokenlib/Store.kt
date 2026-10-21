@@ -53,6 +53,8 @@ data class Settings(
     val logPrompts: Boolean = false,
     /** The balance entered per provider and the spend counted against it; empty until the user enters one. */
     val credits: Map<ProviderKind, Credit> = emptyMap(),
+    /** The master switch: off means no request is sent anywhere, whatever else is configured (on by default). */
+    val enabled: Boolean = true,
 )
 
 interface SettingsRepository {
@@ -184,6 +186,7 @@ class SQLiteStore(private val db: SqlDatabase) : TokenStore {
         var s = Settings()
         for ((key, value) in db.query("SELECT key, value FROM settings") { (it.string(0) ?: "") to it.string(1) }) {
             s = when (key) {
+                "enabled" -> s.copy(enabled = value != "0")
                 "activeProvider" -> s.copy(activeProvider = ProviderKind.of(value))
                 "localBaseURL" -> s.copy(localBaseUrl = value)
                 "localModel" -> s.copy(localModel = value)
@@ -201,7 +204,7 @@ class SQLiteStore(private val db: SqlDatabase) : TokenStore {
     }
 
     override fun save(settings: Settings) {
-        val pairs = listOf("activeProvider" to settings.activeProvider?.id, "localBaseURL" to settings.localBaseUrl, "localModel" to settings.localModel,
+        val pairs = listOf("enabled" to (if (settings.enabled) "1" else "0"), "activeProvider" to settings.activeProvider?.id, "localBaseURL" to settings.localBaseUrl, "localModel" to settings.localModel,
             "dailyTokenCap" to settings.dailyTokenCap?.toString(), "logPrompts" to if (settings.logPrompts) "1" else "0") +
             ProviderKind.entries.map { "credit." + it.id to settings.credits[it]?.let { c -> "${c.micros} ${c.spentMicros}" } }
         for ((k, v) in pairs) db.execute("INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", listOf(k, v))

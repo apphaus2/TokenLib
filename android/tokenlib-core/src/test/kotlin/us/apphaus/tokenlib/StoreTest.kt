@@ -27,7 +27,7 @@ class StoreTest {
             assertEquals(name, listOf(ProviderKind.ANTHROPIC), store.providersWithKeys())
 
             assertEquals(name, Settings(), store.settings())
-            val s = Settings(ProviderKind.LOCAL, "http://h:1/v1", "llama3", 5000, true, mapOf(ProviderKind.ANTHROPIC to Credit(50_000_000, 40_000)))
+            val s = Settings(ProviderKind.LOCAL, "http://h:1/v1", "llama3", 5000, true, mapOf(ProviderKind.ANTHROPIC to Credit(50_000_000, 40_000)), enabled = false)
             store.save(s)
             assertEquals(name, s, store.settings())
             store.save(Settings(ProviderKind.ANTHROPIC))

@@ -20,7 +20,7 @@ final class StoreTests: XCTestCase {
             XCTAssertEqual(try store.providersWithKeys(), [.anthropic], name)
 
             XCTAssertEqual(try store.settings(), Settings(), name)
-            let s = Settings(activeProvider: .local, localBaseURL: "http://h:1/v1", localModel: "llama3", dailyTokenCap: 5000, logPrompts: true,
+            let s = Settings(enabled: false, activeProvider: .local, localBaseURL: "http://h:1/v1", localModel: "llama3", dailyTokenCap: 5000, logPrompts: true,
                              credits: [.anthropic: Credit(micros: 50_000_000, spentMicros: 40_000)])
             try store.save(s)
             XCTAssertEqual(try store.settings(), s, name)

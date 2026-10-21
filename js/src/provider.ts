@@ -40,6 +40,21 @@ export interface Provider {
   makeParser(): ProviderStreamParser;
 }
 
+/**
+ * A provider that answers in-process instead of over HTTP (Apple's on-device model on Apple platforms), registered
+ * on the server per platform (`TokenServer.nativeProviders`). It streams `ChatEvent`s itself; the server still does
+ * the accounting. This port knows the kind (`apple`) and this seam only; no JavaScript host fills it.
+ */
+export interface NativeProvider {
+  readonly kind: ProviderKind;
+  /** Whether the model can answer right now. */
+  readonly isAvailable: boolean;
+  /** Why not, in words for a settings screen; `undefined` when available. */
+  readonly unavailableReason?: string;
+  /** Streams the reply as `text` events and ends with `done`; rejects with a `TokenLibError`. */
+  stream(chat: ChatRequest, call: ProviderCall, onEvent: (event: ChatEvent) => void, signal?: AbortSignal): Promise<void>;
+}
+
 export function parseJSONObject(text: string): Record<string, unknown> | undefined {
   try {
     const v = JSON.parse(text) as unknown;

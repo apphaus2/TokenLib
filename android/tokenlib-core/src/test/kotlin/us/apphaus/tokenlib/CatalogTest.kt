@@ -11,7 +11,7 @@ class CatalogTest {
         for (provider in ProviderKind.entries) for (profile in Profile.entries) {
             val model = Catalog.model(profile, provider)
             assertEquals(provider, model.provider)
-            if (provider == ProviderKind.LOCAL) assertFalse(model.vision)
+            if (provider == ProviderKind.LOCAL || provider == ProviderKind.APPLE) assertFalse(model.vision)
         }
         assertEquals("claude-opus-5-5", Catalog.model(Profile.CHARACTER, ProviderKind.ANTHROPIC).id)
         assertEquals("claude-haiku-4-5", Catalog.model(Profile.FAST, ProviderKind.ANTHROPIC).id)
@@ -31,7 +31,12 @@ class CatalogTest {
         assertEquals("anthropic/claude-opus-5.5", Catalog.model(Profile.CHARACTER, ProviderKind.OPENROUTER).id)
         assertEquals("anthropic/claude-haiku-4.5", Catalog.model(Profile.FAST, ProviderKind.OPENROUTER).id)
         assertTrue(listOf(ProviderKind.DEEPSEEK, ProviderKind.KIMI, ProviderKind.QWEN, ProviderKind.GROK, ProviderKind.MISTRAL, ProviderKind.COHERE, ProviderKind.OPENROUTER).all { it.needsKey })
-        assertEquals(listOf("anthropic", "openai", "gemini", "deepseek", "kimi", "qwen", "grok", "mistral", "cohere", "openrouter", "local"), ProviderKind.entries.map { it.id })
+        assertEquals(listOf("anthropic", "openai", "gemini", "deepseek", "kimi", "qwen", "grok", "mistral", "cohere", "openrouter", "apple", "local"), ProviderKind.entries.map { it.id })
+        assertEquals("apple-on-device", Catalog.model(Profile.ASSISTANT, ProviderKind.APPLE).id)
+        assertEquals(0L, Catalog.model("apple-on-device")!!.costMicros(1000, 1000))
+        assertFalse(ProviderKind.APPLE.needsKey)
+        assertTrue(ProviderKind.APPLE.isNative)
+        assertEquals(listOf(ProviderKind.APPLE), ProviderKind.entries.filter { it.isNative })
         assertEquals(ProviderKind.GEMINI, Catalog.model("gemini-2.5-flash")?.provider)
         assertNull(Catalog.model("nope"))
     }

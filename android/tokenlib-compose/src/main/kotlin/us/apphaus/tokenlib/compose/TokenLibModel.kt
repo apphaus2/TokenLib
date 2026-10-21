@@ -47,7 +47,12 @@ class TokenLibModel(val server: TokenServer) {
     init { refresh() }
 
     val isReady: Boolean get() = server.isReady
+    val isEnabled: Boolean get() = settings.enabled
     val activeProvider: ProviderKind? get() = settings.activeProvider
+    /** The kinds to offer on this device (`TokenServer.availableProviders`). */
+    val availableProviders: List<ProviderKind> get() = server.availableProviders
+    /** Why a native provider cannot answer right now, for the settings footer; `null` when it can. */
+    fun unavailableReason(provider: ProviderKind): String? = server.unavailableReason(provider)
 
     /** The model a profile runs on right now, for display. */
     fun modelName(profile: Profile): String? = server.model(profile)?.let { "${it.name} (${it.provider.displayName})" }
@@ -67,6 +72,9 @@ class TokenLibModel(val server: TokenServer) {
     fun activate(provider: ProviderKind, key: String? = null) = run { server.activate(provider, key?.takeIf { it.isNotBlank() }) }
 
     fun removeKey(provider: ProviderKind) = run { server.setKey(null, provider) }
+
+    /** The master switch: off means no request is sent anywhere. */
+    fun setEnabled(on: Boolean) = run { server.setEnabled(on) }
 
     fun update(change: (Settings) -> Settings) = run { server.update(change) }
 

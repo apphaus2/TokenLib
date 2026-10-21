@@ -6,7 +6,7 @@
  * Port of TokenLib `Catalog.swift`.
  */
 
-export const PROVIDER_KINDS = ['anthropic', 'openai', 'gemini', 'deepseek', 'kimi', 'qwen', 'grok', 'mistral', 'cohere', 'openrouter', 'local'] as const;
+export const PROVIDER_KINDS = ['anthropic', 'openai', 'gemini', 'deepseek', 'kimi', 'qwen', 'grok', 'mistral', 'cohere', 'openrouter', 'apple', 'local'] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
 export function providerDisplayName(kind: ProviderKind): string {
@@ -31,14 +31,25 @@ export function providerDisplayName(kind: ProviderKind): string {
       return 'Cohere';
     case 'openrouter':
       return 'OpenRouter';
+    case 'apple':
+      return 'Apple Intelligence';
     case 'local':
       return 'Local server';
   }
 }
 
-/** An OpenAI-compatible server on the local network needs no key. */
+/** An OpenAI-compatible server on the local network needs no key, and neither does the on-device Apple model. */
 export function providerNeedsKey(kind: ProviderKind): boolean {
-  return kind !== 'local';
+  return kind !== 'local' && kind !== 'apple';
+}
+
+/**
+ * Answered in-process by the platform (no HTTP): the server needs a registered `NativeProvider` for it. `apple` is
+ * Apple's on-device model (Apple Intelligence), served on iOS 26, macOS 26 and visionOS 26; the id exists here so
+ * the three platforms stay in step, but no JavaScript host fills it, so it is never offered.
+ */
+export function providerIsNative(kind: ProviderKind): boolean {
+  return kind === 'apple';
 }
 
 export function isProviderKind(v: unknown): v is ProviderKind {
@@ -184,6 +195,8 @@ export const Catalog = {
     m('openrouter', 'anthropic/claude-sonnet-5.5', 'Claude Sonnet 5.5 via OpenRouter', 'balanced', 2, 10, 1_000_000),
     m('openrouter', 'anthropic/claude-haiku-4.5', 'Claude Haiku 4.5 via OpenRouter', 'fast', 1, 5, 200_000),
   ] as ModelInfo[],
+  /** Apple's on-device model: one small text-only model, free, about a 4k-token window. */
+  apple: [m('apple', 'apple-on-device', 'Apple on-device model', 'fast', 0, 0, 4_096, false)] as ModelInfo[],
   /** A local server serves whatever model is loaded; the id is the settings' `localModel`. */
   local: [m('local', 'local', 'Local model', 'balanced', 0, 0, 32_000, false)] as ModelInfo[],
 

@@ -35,6 +35,83 @@ final class ServerTests: XCTestCase {
         XCTAssertTrue(server.isReady)
     }
 
+    func testDisabledRefusesEveryRequestAndKeepsSettings() throws {
+        try server.activate(.anthropic, key: "sk-live")
+        XCTAssertTrue(server.isEnabled)
+        XCTAssertTrue(server.isReady)
+        try server.setEnabled(false)
+        XCTAssertFalse(server.isEnabled)
+        XCTAssertFalse(server.isReady, "off beats everything else")
+        let client = TokenClient(broker: server)
+        var (result, _) = stream(client.session(consumer: "bush", profile: .character))
+        if case .failure(let e)? = result { XCTAssertEqual(e, .disabled) } else { XCTFail() }
+        XCTAssertEqual(transport.requests.count, 0, "nothing is sent")
+        XCTAssertEqual(server.usageToday().requests, 0)
+        XCTAssertTrue(server.hasKey(for: .anthropic), "keys stay")
+        XCTAssertEqual(server.settings.activeProvider, .anthropic, "and so does the choice")
+        try server.setEnabled(true)
+        XCTAssertTrue(server.isReady)
+        (result, _) = stream(client.session(consumer: "bush", profile: .character))
+        XCTAssertEqual(try result?.get().text, "Ask, and the bush shall sing.")
+    }
+
+    final class FakeNative: NativeProvider {
+        let kind: ProviderKind = .apple
+        var isAvailable = false
+        var unavailableReason: String? { isAvailable ? nil : "Turn on Apple Intelligence in Settings." }
+        var calls: [(ChatRequest, ProviderCall)] = []
+        func stream(_ chat: ChatRequest, call: ProviderCall, onEvent: @escaping (ChatEvent) -> Void, completion: @escaping (Result<Void, TokenLibError>) -> Void) -> Cancellable {
+            calls.append((chat, call))
+            onEvent(.text("On "))
+            onEvent(.text("device."))
+            onEvent(.done(usage: Usage(), stop: .end))
+            completion(.success(()))
+            return NoopCancellable()
+        }
+    }
+
+    func testNativeProviderServesAppleWithoutAKeyOrTheNetwork() throws {
+        XCTAssertFalse(server.availableProviders.contains(.apple), "not offered until a platform registers it")
+        XCTAssertEqual(server.unavailableReason(for: .apple), "Apple Intelligence is not available on this platform.")
+        XCTAssertNil(server.unavailableReason(for: .anthropic))
+        try server.activate(.apple)
+        XCTAssertFalse(server.isReady)
+        let client = TokenClient(broker: server)
+        var (result, _) = stream(client.session(consumer: "bush", profile: .character))
+        if case .failure(let e)? = result { XCTAssertEqual(e, .unavailable(.apple)) } else { XCTFail() }
+
+        let native = FakeNative()
+        server.nativeProviders[.apple] = native
+        XCTAssertTrue(server.availableProviders.contains(.apple))
+        XCTAssertFalse(server.isReady, "registered but the device says no")
+        XCTAssertEqual(server.unavailableReason(for: .apple), "Turn on Apple Intelligence in Settings.")
+        (result, _) = stream(client.session(consumer: "bush", profile: .character))
+        if case .failure(let e)? = result { XCTAssertEqual(e, .unavailable(.apple)) } else { XCTFail() }
+
+        native.isAvailable = true
+        XCTAssertTrue(server.isReady)
+        XCTAssertNil(server.unavailableReason(for: .apple))
+        XCTAssertEqual(server.model(for: .assistant)?.id, "apple-on-device")
+        let session = client.session(consumer: "bush", profile: .character, budget: 1000)
+        let deltas: [String]
+        (result, deltas) = stream(session)
+        let reply = try XCTUnwrap(result?.get())
+        XCTAssertEqual(reply.text, "On device.")
+        XCTAssertEqual(deltas, ["On ", "device."])
+        XCTAssertEqual(reply.provider, .apple)
+        XCTAssertEqual(reply.usage.replyTokens, 3, "estimated: the framework reports no counts")
+        XCTAssertGreaterThan(reply.usage.promptTokens, 0)
+        XCTAssertEqual(session.spent, reply.usage.total)
+        XCTAssertEqual(transport.requests.count, 0, "no HTTP")
+        XCTAssertEqual(native.calls.count, 1)
+        XCTAssertNil(native.calls[0].1.key)
+        XCTAssertEqual(native.calls[0].1.profile, .character)
+        let row = try XCTUnwrap(server.recentUsage().first)
+        XCTAssertEqual(row.provider, .apple)
+        XCTAssertEqual(row.model, "apple-on-device")
+        XCTAssertEqual(row.costMicros, 0)
+    }
+
     func testStreamsRecordsUsageAndEncryptsKeys() throws {
         struct Rot13: SecretCipher {
             func encrypt(_ p: Data) throws -> Data { Data(p.map { $0 ^ 0x2A }) }

@@ -30,7 +30,23 @@ interface ProviderStreamParser {
     fun finish(): List<ChatEvent>
 }
 
+/**
+ * A provider that answers in-process instead of over HTTP (Apple's on-device model on Apple platforms), registered
+ * on the server per platform (`TokenServer.nativeProviders`). It streams `ChatEvent`s itself; the server still does
+ * the accounting. The core knows the kind (`ProviderKind.APPLE`) and this seam only; no Android platform fills it yet.
+ */
+interface NativeProvider {
+    val kind: ProviderKind
+    /** Whether the model can answer right now. */
+    val isAvailable: Boolean
+    /** Why not, in words for a settings screen; `null` when available. */
+    val unavailableReason: String?
+    /** Streams the reply as `Text` deltas and ends with `Done`; `completion` then reports success or a [TokenLibException]. */
+    fun stream(chat: ChatRequest, call: ProviderCall, onEvent: (ChatEvent) -> Unit, completion: (Result<Unit>) -> Unit): Cancellable
+}
+
 object Providers {
+    /** The HTTP provider for a kind; native kinds have none ([NativeProvider]). */
     fun provider(kind: ProviderKind): Provider = when (kind) {
         ProviderKind.ANTHROPIC -> AnthropicProvider()
         ProviderKind.GEMINI -> GeminiProvider()

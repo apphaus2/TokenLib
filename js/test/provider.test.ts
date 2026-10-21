@@ -7,6 +7,7 @@ import {
   Catalog,
   ChatMessage,
   COHERE_ENDPOINT,
+  costMicros,
   DEEPSEEK_ENDPOINT,
   GeminiProvider,
   GROK_ENDPOINT,
@@ -16,6 +17,8 @@ import {
   OpenAIProvider,
   OPENROUTER_ENDPOINT,
   PROVIDER_KINDS,
+  providerIsNative,
+  providerNeedsKey,
   Providers,
   QWEN_ENDPOINT,
   type ChatRequest,
@@ -303,6 +306,11 @@ describe('Catalog', () => {
     expect(Catalog.modelFor('fast', 'cohere').id).toBe('command-r7b-12-2024');
     expect(Catalog.modelFor('character', 'openrouter').id).toBe('anthropic/claude-opus-5.5');
     expect(Catalog.modelFor('fast', 'openrouter').id).toBe('anthropic/claude-haiku-4.5');
-    expect([...PROVIDER_KINDS]).toEqual(['anthropic', 'openai', 'gemini', 'deepseek', 'kimi', 'qwen', 'grok', 'mistral', 'cohere', 'openrouter', 'local']);
+    expect([...PROVIDER_KINDS]).toEqual(['anthropic', 'openai', 'gemini', 'deepseek', 'kimi', 'qwen', 'grok', 'mistral', 'cohere', 'openrouter', 'apple', 'local']);
+    expect(Catalog.modelFor('assistant', 'apple').id, 'one model serves every profile').toBe('apple-on-device');
+    expect(Catalog.modelFor('vision', 'apple').vision).toBe(false);
+    expect(costMicros(Catalog.model('apple-on-device')!, 1000, 1000)).toBe(0);
+    expect(providerNeedsKey('apple')).toBe(false);
+    expect(PROVIDER_KINDS.filter(providerIsNative)).toEqual(['apple']);
   });
 });

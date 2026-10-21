@@ -80,8 +80,12 @@ sealed class ChatEvent {
 data class ChatReply(val text: String, val usage: Usage, val stop: StopReason, val model: String, val provider: ProviderKind)
 
 sealed class TokenLibException(message: String) : Exception(message) {
+    /** `Settings.enabled` is off: nothing is sent anywhere. */
+    object Disabled : TokenLibException("AI is turned off")
     object NoProvider : TokenLibException("no AI provider is configured")
     data class MissingKey(val provider: ProviderKind) : TokenLibException("no API key for ${provider.displayName}")
+    /** A native provider (Apple Intelligence) is active but cannot answer on this device or build. */
+    data class Unavailable(val provider: ProviderKind) : TokenLibException("${provider.displayName} is not available on this device")
     object BudgetExhausted : TokenLibException("the session's token budget is spent")
     object DailyCapReached : TokenLibException("the daily token cap is reached")
     data class Http(val status: Int, val body: String) : TokenLibException("HTTP $status: ${body.take(200)}")

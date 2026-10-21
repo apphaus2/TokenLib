@@ -39,9 +39,19 @@ public enum TokenLibBootstrap {
             _ = try? server.reencryptKeys(from: legacy)
             if server.keysReadable { try? legacy.deleteKey() }
         }
-        return server
         #else
-        return TokenServer(store: store, cipher: PlainCipher(), transport: transport)
+        let server = TokenServer(store: store, cipher: PlainCipher(), transport: transport)
+        #endif
+        registerPlatformProviders(on: server)
+        return server
+    }
+
+    /// Registers the providers this platform answers in-process: Apple's on-device model (`ProviderKind.apple`)
+    /// where the Foundation Models framework exists (iOS 26, macOS 26, visionOS 26). `standard` calls this;
+    /// an app that composes its own server calls it once after construction.
+    public static func registerPlatformProviders(on server: TokenServer) {
+        #if canImport(FoundationModels) && (os(iOS) || os(macOS) || os(visionOS))
+        if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) { server.nativeProviders[.apple] = AppleProvider() }
         #endif
     }
 }
@@ -73,7 +83,12 @@ public final class TokenLibModel: ObservableObject {
     public convenience init(appId: String) { self.init(server: TokenLibBootstrap.standard(appId: appId)) }
 
     public var isReady: Bool { server.isReady }
+    public var isEnabled: Bool { settings.enabled }
     public var activeProvider: ProviderKind? { settings.activeProvider }
+    /// The kinds to offer on this device (`TokenServer.availableProviders`).
+    public var availableProviders: [ProviderKind] { server.availableProviders }
+    /// Why a native provider cannot answer right now, for the settings footer; `nil` when it can.
+    public func unavailableReason(for provider: ProviderKind) -> String? { server.unavailableReason(for: provider) }
 
     /// The model a profile runs on right now, for display.
     public func modelName(for profile: Profile) -> String? { server.model(for: profile).map { "\($0.name) (\($0.provider.displayName))" } }
@@ -95,6 +110,9 @@ public final class TokenLibModel: ObservableObject {
     }
 
     public func removeKey(for provider: ProviderKind) { run { try server.setKey(nil, for: provider) } }
+
+    /// The master switch: off means no request is sent anywhere.
+    public func setEnabled(_ on: Bool) { run { try server.setEnabled(on) } }
 
     public func update(_ change: (inout Settings) -> Void) { run { try server.update(change) } }
 

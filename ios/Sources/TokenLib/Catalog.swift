@@ -27,6 +27,10 @@ public enum ProviderKind: String, CaseIterable, Codable {
     case cohere
     /// OpenRouter: many vendors' models behind one key, OpenAI-compatible (openrouter.ai).
     case openrouter
+    /// Apple's on-device foundation model (Apple Intelligence), answered in-process by the Foundation Models
+    /// framework on iOS 26, macOS 26 and visionOS 26; no key, no network. Served by a `NativeProvider` the
+    /// platform bootstrap registers, so it is only offered where it runs.
+    case apple
     /// An OpenAI-compatible server on the local network (Ollama, LM Studio, vLLM); no key needed.
     case local
 
@@ -42,11 +46,15 @@ public enum ProviderKind: String, CaseIterable, Codable {
         case .mistral: return "Mistral"
         case .cohere: return "Cohere"
         case .openrouter: return "OpenRouter"
+        case .apple: return "Apple Intelligence"
         case .local: return "Local server"
         }
     }
 
-    public var needsKey: Bool { self != .local }
+    public var needsKey: Bool { self != .local && self != .apple }
+
+    /// Answered in-process by the platform (no HTTP): the server needs a registered `NativeProvider` for it.
+    public var isNative: Bool { self == .apple }
 }
 
 /// How capable (and expensive) a model is; profiles ask for a tier, the catalog picks the model.
@@ -178,6 +186,10 @@ public enum Catalog {
         ModelInfo(provider: .openrouter, id: "anthropic/claude-sonnet-5.5", name: "Claude Sonnet 5.5 via OpenRouter", tier: .balanced, inputPerMillion: 2, outputPerMillion: 10, contextTokens: 1_000_000),
         ModelInfo(provider: .openrouter, id: "anthropic/claude-haiku-4.5", name: "Claude Haiku 4.5 via OpenRouter", tier: .fast, inputPerMillion: 1, outputPerMillion: 5, contextTokens: 200_000),
     ]
+    /// Apple's on-device model: one small text-only model, free, about a 4k-token window.
+    public static let apple: [ModelInfo] = [
+        ModelInfo(provider: .apple, id: "apple-on-device", name: "Apple on-device model", tier: .fast, inputPerMillion: 0, outputPerMillion: 0, contextTokens: 4_096, vision: false),
+    ]
     /// A local server serves whatever model is loaded; the id is the settings' `localModel`.
     public static let local: [ModelInfo] = [
         ModelInfo(provider: .local, id: "local", name: "Local model", tier: .balanced, inputPerMillion: 0, outputPerMillion: 0, contextTokens: 32_000, vision: false),
@@ -195,6 +207,7 @@ public enum Catalog {
         case .mistral: return mistral
         case .cohere: return cohere
         case .openrouter: return openrouter
+        case .apple: return apple
         case .local: return local
         }
     }

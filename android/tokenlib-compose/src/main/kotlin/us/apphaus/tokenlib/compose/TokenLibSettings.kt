@@ -2,8 +2,8 @@
  * TokenLibSettings.kt
  * TokenLib (Compose)
  *
- * The settings a host app drops into its own Column: provider, key, local
- * server, prompt logging, today's usage. Material 3 controls in the host's
+ * The settings a host app drops into its own Column: the master switch,
+ * provider, key, local server, prompt logging, today's usage. Material 3 controls in the host's
  * theme, no navigation or branding of its own. Keys go straight to the
  * server, which stores ciphertext.
  */
@@ -47,23 +47,37 @@ import us.apphaus.tokenlib.UsageTotals
 import java.text.DateFormat
 import java.util.Date
 
-/** Provider, key, local server, prompt logging and today's usage. Pass `title = null` to leave the heading to the host. */
+/** The master switch, provider, key, local server, prompt logging and today's usage. Pass `title = null` to leave the heading to the host. */
 @Composable
 fun TokenLibSettings(model: TokenLibModel, modifier: Modifier = Modifier, title: String? = "AI provider") {
-    var provider by remember { mutableStateOf(model.settings.activeProvider ?: ProviderKind.ANTHROPIC) }
+    LaunchedEffect(model) { model.refresh() }
+    Column(modifier) {
+        if (title != null) Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(bottom = 8.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Enable AI", Modifier.weight(1f))
+            Switch(checked = model.isEnabled, onCheckedChange = { on -> model.setEnabled(on) })
+        }
+        if (model.isEnabled) Configuration(model)
+        else Text("AI is off: nothing is sent to any provider. Keys and settings are kept.", style = MaterialTheme.typography.bodySmall)
+        model.lastError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+    }
+}
+
+/** Everything below the switch: provider, its key or server or availability, activation, logging, today's usage. */
+@Composable
+private fun Configuration(model: TokenLibModel) {
+    var provider by remember { mutableStateOf(model.settings.activeProvider ?: model.availableProviders[0]) }
     var key by remember { mutableStateOf("") }
     var credit by remember { mutableStateOf("") }
     var localUrl by remember { mutableStateOf(model.settings.localBaseUrl ?: "") }
     var localModel by remember { mutableStateOf(model.settings.localModel ?: "") }
     var menu by remember { mutableStateOf(false) }
-    LaunchedEffect(model) { model.refresh() }
-    Column(modifier) {
-        if (title != null) Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(bottom = 8.dp))
+    Column {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Provider", Modifier.weight(1f))
             TextButton(onClick = { menu = true }) { Text(label(provider, model)) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                for (kind in ProviderKind.entries) DropdownMenuItem(text = { Text(label(kind, model)) }, onClick = { provider = kind; menu = false })
+                for (kind in model.availableProviders) DropdownMenuItem(text = { Text(label(kind, model)) }, onClick = { provider = kind; menu = false })
             }
         }
         if (provider.needsKey) {
@@ -76,14 +90,14 @@ fun TokenLibSettings(model: TokenLibModel, modifier: Modifier = Modifier, title:
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                 TextButton(onClick = { model.setCredit(amount, provider); credit = "" }, enabled = amount != null) { Text("Set") }
             }
-        } else {
+        } else if (provider == ProviderKind.LOCAL) {
             OutlinedTextField(value = localUrl, onValueChange = { localUrl = it }, label = { Text("Server URL, e.g. http://192.168.1.20:11434/v1") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = localModel, onValueChange = { localModel = it }, label = { Text("Model name, e.g. llama3") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         }
         val active = model.settings.activeProvider == provider && key.isBlank() && (!provider.needsKey || model.hasKey(provider))
         Row(Modifier.fillMaxWidth()) {
             Button(onClick = {
-                if (!provider.needsKey) model.setLocalServer(localUrl, localModel)
+                if (provider == ProviderKind.LOCAL) model.setLocalServer(localUrl, localModel)
                 model.activate(provider, key)
                 key = ""
             }, enabled = !(provider.needsKey && key.isBlank() && !model.hasKey(provider))) {
@@ -97,9 +111,12 @@ fun TokenLibSettings(model: TokenLibModel, modifier: Modifier = Modifier, title:
         }
         TokenLibUsageRow("Today", model.usageToday)
         val name = model.modelName(Profile.CHARACTER)
-        Text(if (model.isReady && name != null) "Characters answer with $name." else "Pick a provider and enter its API key. Keys are stored encrypted on this device. Enter the balance from the provider's billing page to see what is left; it counts this app's use only.",
-            style = MaterialTheme.typography.bodySmall)
-        model.lastError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        val reason = model.unavailableReason(provider)
+        Text(when {
+            reason != null -> reason
+            model.isReady && name != null -> "Characters answer with $name."
+            else -> "Pick a provider and enter its API key. Keys are stored encrypted on this device. Enter the balance from the provider's billing page to see what is left; it counts this app's use only."
+        }, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -178,7 +195,7 @@ fun TokenLibUsage(model: TokenLibModel, modifier: Modifier = Modifier) {
 @Composable
 fun TokenLibStatusBadge(model: TokenLibModel, modifier: Modifier = Modifier) {
     Text(
-        if (model.isReady) "AI: ${model.activeProvider?.displayName ?: "ready"}" else "No AI provider",
+        if (model.isReady) "AI: ${model.activeProvider?.displayName ?: "ready"}" else if (model.isEnabled) "No AI provider" else "AI off",
         style = MaterialTheme.typography.labelSmall,
         color = if (model.isReady) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier,

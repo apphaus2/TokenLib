@@ -11,7 +11,10 @@ import {
   TokenServer,
   TokenLibError,
   UsageTotals,
+  type ChatEvent,
   type ChatRequest,
+  type NativeProvider,
+  type ProviderCall,
   type SecretCipher,
 } from '../src';
 import { Canned, FakeTransport } from './fake-transport';
@@ -54,6 +57,76 @@ describe('TokenServer', () => {
       s.localBaseURL = 'http://h/v1';
     });
     expect(await server.isReady()).toBe(true);
+  });
+
+  it('refuses every request while disabled and keeps the settings', async () => {
+    await server.activate('anthropic', 'sk-live');
+    expect(await server.isEnabled()).toBe(true);
+    expect(await server.isReady()).toBe(true);
+    await server.setEnabled(false);
+    expect(await server.isEnabled()).toBe(false);
+    expect(await server.isReady(), 'off beats everything else').toBe(false);
+    const client = new TokenClient(server);
+    expect((await failure(client.session('bush', 'character').send(request()))).code).toBe('disabled');
+    expect(transport.requests.length, 'nothing is sent').toBe(0);
+    expect((await server.usageToday()).requests).toBe(0);
+    expect(await server.hasKey('anthropic'), 'keys stay').toBe(true);
+    expect((await server.settings()).activeProvider).toBe('anthropic');
+    await server.setEnabled(true);
+    expect(await server.isReady()).toBe(true);
+    expect((await client.session('bush', 'character').send(request())).text).toBe('Ask, and the bush shall sing.');
+  });
+
+  it('serves apple through a native provider, with no key and no network', async () => {
+    expect(server.availableProviders(), 'not offered until a platform registers it').not.toContain('apple');
+    expect(server.unavailableReason('apple')).toBe('apple is not available on this platform.');
+    expect(server.unavailableReason('anthropic')).toBeUndefined();
+    await server.activate('apple');
+    expect(await server.isReady()).toBe(false);
+    const client = new TokenClient(server);
+    expect((await failure(client.session('bush', 'character').send(request()))).code).toBe('unavailable');
+
+    const calls: [ChatRequest, ProviderCall][] = [];
+    const native: NativeProvider & { isAvailable: boolean } = {
+      kind: 'apple',
+      isAvailable: false,
+      get unavailableReason() {
+        return this.isAvailable ? undefined : 'Turn on Apple Intelligence in Settings.';
+      },
+      async stream(chat, call, onEvent: (e: ChatEvent) => void) {
+        calls.push([chat, call]);
+        onEvent({ type: 'text', text: 'On ' });
+        onEvent({ type: 'text', text: 'device.' });
+        onEvent({ type: 'done', usage: { promptTokens: 0, replyTokens: 0 }, stop: 'end' });
+      },
+    };
+    server.nativeProviders.apple = native;
+    expect(server.availableProviders()).toContain('apple');
+    expect(await server.isReady(), 'registered but the device says no').toBe(false);
+    expect(server.unavailableReason('apple')).toBe('Turn on Apple Intelligence in Settings.');
+    expect((await failure(client.session('bush', 'character').send(request()))).code).toBe('unavailable');
+
+    native.isAvailable = true;
+    expect(await server.isReady()).toBe(true);
+    expect(server.unavailableReason('apple')).toBeUndefined();
+    expect((await server.model('assistant'))?.id).toBe('apple-on-device');
+    const session = client.session('bush', 'character', 1000);
+    const deltas: string[] = [];
+    const reply = await session.stream(request(), (d) => deltas.push(d));
+    expect(reply.text).toBe('On device.');
+    expect(deltas).toEqual(['On ', 'device.']);
+    expect(reply.provider).toBe('apple');
+    expect(reply.usage.replyTokens, 'estimated: the framework reports no counts').toBe(3);
+    expect(reply.usage.promptTokens).toBeGreaterThan(0);
+    expect(session.spent).toBe(reply.usage.promptTokens + reply.usage.replyTokens);
+    expect(transport.requests.length, 'no HTTP').toBe(0);
+    expect(calls.length).toBe(1);
+    expect(calls[0]![1].key).toBeUndefined();
+    expect(calls[0]![1].profile).toBe('character');
+    const row = (await server.recentUsage())[0]!;
+    expect(row.provider).toBe('apple');
+    expect(row.model).toBe('apple-on-device');
+    expect(row.costMicros).toBe(0);
   });
 
   it('streams, records usage and encrypts keys', async () => {

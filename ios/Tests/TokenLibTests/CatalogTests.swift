@@ -7,7 +7,7 @@ final class CatalogTests: XCTestCase {
             for profile in Profile.allCases {
                 let model = Catalog.model(for: profile, provider: provider)
                 XCTAssertEqual(model.provider, provider)
-                if provider == .local { XCTAssertFalse(model.vision) }
+                if provider == .local || provider == .apple { XCTAssertFalse(model.vision) }
             }
         }
         XCTAssertEqual(Catalog.model(for: .character, provider: .anthropic).id, "claude-opus-5-5")
@@ -28,7 +28,12 @@ final class CatalogTests: XCTestCase {
         XCTAssertEqual(Catalog.model(for: .character, provider: .openrouter).id, "anthropic/claude-opus-5.5")
         XCTAssertEqual(Catalog.model(for: .fast, provider: .openrouter).id, "anthropic/claude-haiku-4.5")
         XCTAssertTrue([ProviderKind.deepseek, .kimi, .qwen, .grok, .mistral, .cohere, .openrouter].allSatisfy(\.needsKey))
-        XCTAssertEqual(ProviderKind.allCases.map(\.rawValue), ["anthropic", "openai", "gemini", "deepseek", "kimi", "qwen", "grok", "mistral", "cohere", "openrouter", "local"])
+        XCTAssertEqual(ProviderKind.allCases.map(\.rawValue), ["anthropic", "openai", "gemini", "deepseek", "kimi", "qwen", "grok", "mistral", "cohere", "openrouter", "apple", "local"])
+        XCTAssertEqual(Catalog.model(for: .assistant, provider: .apple).id, "apple-on-device", "one model serves every profile")
+        XCTAssertEqual(Catalog.model(id: "apple-on-device")?.costMicros(promptTokens: 1000, replyTokens: 1000), 0)
+        XCTAssertFalse(ProviderKind.apple.needsKey)
+        XCTAssertTrue(ProviderKind.apple.isNative)
+        XCTAssertEqual(ProviderKind.allCases.filter(\.isNative), [.apple])
         XCTAssertEqual(Catalog.model(id: "gemini-2.5-flash")?.provider, .gemini)
         XCTAssertNil(Catalog.model(id: "nope"))
     }

@@ -25,6 +25,9 @@ public final class TokenServer: TokenBroker {
     public let transport: HttpTransport
     /// Overrides the catalog's providers (tests inject fakes).
     public var providers: [ProviderKind: Provider] = [:]
+    /// In-process providers by kind, registered per platform (`TokenLibBootstrap.standard` adds Apple's on-device
+    /// model where the Foundation Models framework exists). A native kind with no entry here is not offered.
+    public var nativeProviders: [ProviderKind: NativeProvider] = [:]
     /// The start of "today" for the daily cap; midnight local time by default.
     public var dayStart: () -> Date = { Calendar.current.startOfDay(for: Date()) }
     private let lock = NSLock()
@@ -82,10 +85,28 @@ public final class TokenServer: TokenBroker {
         try update { $0.activeProvider = provider }
     }
 
+    /// Turns every request on or off; `Settings.enabled` underneath.
+    public func setEnabled(_ on: Bool) throws { try update { $0.enabled = on } }
+
+    public var isEnabled: Bool { settings.enabled }
+
     public var isReady: Bool {
-        guard let p = settings.activeProvider else { return false }
-        if p == .local { return settings.localBaseURL != nil }
+        let s = settings
+        guard s.enabled, let p = s.activeProvider else { return false }
+        if p.isNative { return nativeProviders[p]?.isAvailable ?? false }
+        if p == .local { return s.localBaseURL != nil }
         return hasKey(for: p)
+    }
+
+    /// The kinds a settings screen offers on this device: every HTTP provider, plus the native ones registered here.
+    public var availableProviders: [ProviderKind] { ProviderKind.allCases.filter { !$0.isNative || nativeProviders[$0] != nil } }
+
+    /// Why a native provider cannot answer right now (device not eligible, feature off, model downloading), or
+    /// that this build has none; `nil` for HTTP providers and for a native one that is available.
+    public func unavailableReason(for kind: ProviderKind) -> String? {
+        guard kind.isNative else { return nil }
+        guard let native = nativeProviders[kind] else { return "\(kind.displayName) is not available on this platform." }
+        return native.unavailableReason
     }
 
     /// The model a profile will run on right now.
@@ -117,17 +138,15 @@ public final class TokenServer: TokenBroker {
 
     public func stream(_ request: ChatRequest, profile: Profile, consumer: String, onEvent: @escaping (ChatEvent) -> Void, completion: @escaping (Result<ChatReply, TokenLibError>) -> Void) -> Cancellable {
         let settings = self.settings
+        guard settings.enabled else { return failed(.disabled, completion) }
         guard let kind = settings.activeProvider else { return failed(.noProvider, completion) }
         if let cap = settings.dailyTokenCap, usageToday().totalTokens + request.estimatedPromptTokens >= cap { return failed(.dailyCapReached, completion) }
         let key: String?
         do { key = try self.key(for: kind) } catch { return failed(.transport("\(error)"), completion) }
         if kind.needsKey, key == nil { return failed(.missingKey(kind), completion) }
         guard let model = model(for: profile) else { return failed(.noProvider, completion) }
-        let provider = providers[kind] ?? Providers.provider(for: kind)
         let call = ProviderCall(model: model, key: key, baseURL: settings.localBaseURL.flatMap(URL.init), profile: profile)
-        let http: HttpRequest
-        do { http = try provider.request(request, call: call) } catch let e as TokenLibError { return failed(e, completion) } catch { return failed(.transport("\(error)"), completion) }
-        var parser = provider.makeParser()
+        // Everything after the provider answers is the same for both paths: fill in estimates, record usage, charge credit.
         var text = ""
         var done: (Usage, StopReason)?
         let deliver: (ChatEvent) -> Void = { event in
@@ -137,13 +156,10 @@ public final class TokenServer: TokenBroker {
             }
             onEvent(event)
         }
-        return transport.stream(http, onStatus: { _ in }, onLine: { line in
-            for event in parser.feed(line) { deliver(event) }
-        }, completion: { [weak self] result in
+        let finish: (Result<Void, TokenLibError>) -> Void = { [weak self] result in
             switch result {
             case .failure(let error): completion(.failure(error))
             case .success:
-                for event in parser.finish() { deliver(event) }
                 var usage = done?.0 ?? Usage()
                 let stop = done?.1 ?? .other
                 if usage.promptTokens == 0 { usage.promptTokens = request.estimatedPromptTokens }
@@ -157,6 +173,20 @@ public final class TokenServer: TokenBroker {
                 }
                 completion(.success(ChatReply(text: text, usage: usage, stop: stop, model: model.id, provider: kind)))
             }
+        }
+        if kind.isNative {
+            guard let native = nativeProviders[kind], native.isAvailable else { return failed(.unavailable(kind), completion) }
+            return native.stream(request, call: call, onEvent: deliver, completion: finish)
+        }
+        let provider = providers[kind] ?? Providers.provider(for: kind)
+        let http: HttpRequest
+        do { http = try provider.request(request, call: call) } catch let e as TokenLibError { return failed(e, completion) } catch { return failed(.transport("\(error)"), completion) }
+        var parser = provider.makeParser()
+        return transport.stream(http, onStatus: { _ in }, onLine: { line in
+            for event in parser.feed(line) { deliver(event) }
+        }, completion: { result in
+            if case .success = result { for event in parser.finish() { deliver(event) } }
+            finish(result)
         })
     }
 

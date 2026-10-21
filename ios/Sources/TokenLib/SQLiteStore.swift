@@ -151,6 +151,7 @@ public final class SQLiteStore: TokenStore {
         var s = Settings()
         for (key, value) in rows {
             switch key {
+            case "enabled": s.enabled = value != "0"
             case "activeProvider": s.activeProvider = value.flatMap(ProviderKind.init)
             case "localBaseURL": s.localBaseURL = value
             case "localModel": s.localModel = value
@@ -168,7 +169,7 @@ public final class SQLiteStore: TokenStore {
 
     public func save(_ settings: Settings) throws {
         let pairs: [(String, String?)] = [
-            ("activeProvider", settings.activeProvider?.rawValue), ("localBaseURL", settings.localBaseURL), ("localModel", settings.localModel),
+            ("enabled", settings.enabled ? "1" : "0"), ("activeProvider", settings.activeProvider?.rawValue), ("localBaseURL", settings.localBaseURL), ("localModel", settings.localModel),
             ("dailyTokenCap", settings.dailyTokenCap.map(String.init)), ("logPrompts", settings.logPrompts ? "1" : "0"),
         ] + ProviderKind.allCases.map { ("credit." + $0.rawValue, settings.credits[$0].map { "\($0.micros) \($0.spentMicros)" }) }
         for (key, value) in pairs {

@@ -26,8 +26,17 @@ enum class ProviderKind(val id: String, val displayName: String, val needsKey: B
     COHERE("cohere", "Cohere"),
     /** OpenRouter: many vendors' models behind one key, OpenAI-compatible (openrouter.ai). */
     OPENROUTER("openrouter", "OpenRouter"),
+    /**
+     * Apple's on-device foundation model (Apple Intelligence), answered in-process on iOS 26, macOS 26 and
+     * visionOS 26; no key, no network. Served by a [NativeProvider] the platform registers, so it is only offered
+     * where it runs: never on the JVM or Android, where the id exists so the three platforms stay in step.
+     */
+    APPLE("apple", "Apple Intelligence", needsKey = false),
     /** An OpenAI-compatible server on the local network (Ollama, LM Studio, vLLM); no key needed. */
     LOCAL("local", "Local server", needsKey = false);
+
+    /** Answered in-process by the platform (no HTTP): the server needs a registered [NativeProvider] for it. */
+    val isNative: Boolean get() = this == APPLE
 
     companion object { fun of(id: String?): ProviderKind? = entries.firstOrNull { it.id == id } }
 }
@@ -131,6 +140,8 @@ object Catalog {
         ModelInfo(ProviderKind.OPENROUTER, "anthropic/claude-sonnet-5.5", "Claude Sonnet 5.5 via OpenRouter", ModelTier.BALANCED, 2.0, 10.0, 1_000_000),
         ModelInfo(ProviderKind.OPENROUTER, "anthropic/claude-haiku-4.5", "Claude Haiku 4.5 via OpenRouter", ModelTier.FAST, 1.0, 5.0, 200_000),
     )
+    /** Apple's on-device model: one small text-only model, free, about a 4k-token window. */
+    val apple = listOf(ModelInfo(ProviderKind.APPLE, "apple-on-device", "Apple on-device model", ModelTier.FAST, 0.0, 0.0, 4_096, vision = false))
     /** A local server serves whatever model is loaded; the id is the settings' `localModel`. */
     val local = listOf(ModelInfo(ProviderKind.LOCAL, "local", "Local model", ModelTier.BALANCED, 0.0, 0.0, 32_000, vision = false))
 
@@ -138,6 +149,7 @@ object Catalog {
         ProviderKind.ANTHROPIC -> anthropic; ProviderKind.OPENAI -> openai; ProviderKind.GEMINI -> gemini
         ProviderKind.DEEPSEEK -> deepseek; ProviderKind.KIMI -> kimi; ProviderKind.QWEN -> qwen
         ProviderKind.GROK -> grok; ProviderKind.MISTRAL -> mistral; ProviderKind.COHERE -> cohere; ProviderKind.OPENROUTER -> openrouter
+        ProviderKind.APPLE -> apple
         ProviderKind.LOCAL -> local
     }
 

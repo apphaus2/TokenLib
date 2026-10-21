@@ -2,10 +2,10 @@
 //  TokenLibSettingsSection.swift
 //  TokenLibUI
 //
-//  The settings a host app embeds in its own Form: provider, key, local
-//  server, prompt logging, today's usage. Platform controls, host theme, no
-//  navigation of its own. Keys never leave the field unencrypted: they go
-//  straight to the server, which stores ciphertext.
+//  The settings a host app embeds in its own Form: the master switch,
+//  provider, key, local server, prompt logging, today's usage. Platform
+//  controls, host theme, no navigation of its own. Keys never leave the field
+//  unencrypted: they go straight to the server, which stores ciphertext.
 //
 
 #if canImport(SwiftUI) && canImport(Combine)
@@ -29,61 +29,67 @@ public struct TokenLibSettingsSection: View {
 
     public var body: some View {
         Section(header: Text(title), footer: Text(footer)) {
-            Picker("Provider", selection: $provider) {
-                ForEach(ProviderKind.allCases, id: \.self) { kind in
-                    Text(model.hasKey(kind) ? "\(kind.displayName) ✓" : kind.displayName).tag(kind)
-                }
-            }
-            if provider.needsKey {
-                SecureField(model.hasKey(provider) ? "API key (stored; enter to replace)" : "API key", text: $key)
-                    .textContentType(.password)
-                    #if os(iOS) || os(tvOS)
-                    .textInputAutocapitalization(.never)
-                    #endif
-                    .disableAutocorrection(true)
-                HStack {
-                    TextField(creditPrompt, text: $credit)
-                        #if os(iOS) || os(tvOS)
-                        .keyboardType(.decimalPad)
-                        #endif
-                    Button("Set") { model.setCredit(creditAmount, for: provider); credit = "" }
-                        // tvOS has .borderless only from 17, and the focus engine reaches a row's buttons anyway.
-                        #if !os(tvOS)
-                        .buttonStyle(.borderless)
-                        #endif
-                        .disabled(creditAmount == nil)
-                }
-            } else {
-                TextField("Server URL, e.g. http://192.168.1.20:11434/v1", text: $localURL)
-                    #if os(iOS) || os(tvOS)
-                    .textInputAutocapitalization(.never).keyboardType(.URL)
-                    #endif
-                    .disableAutocorrection(true)
-                TextField("Model name, e.g. llama3", text: $localModel)
-                    #if os(iOS) || os(tvOS)
-                    .textInputAutocapitalization(.never)
-                    #endif
-                    .disableAutocorrection(true)
-            }
-            Button(isActive ? "Active" : "Use \(provider.displayName)") {
-                if !provider.needsKey { model.setLocalServer(url: localURL, model: localModel) }
-                model.activate(provider, key: key)
-                key = ""
-            }
-            .disabled(provider.needsKey && key.isEmpty && !model.hasKey(provider))
-            if model.hasKey(provider) {
-                Button("Remove key", role: .destructive) { model.removeKey(for: provider) }
-            }
-            Toggle("Keep prompts in the usage log", isOn: Binding(get: { model.settings.logPrompts }, set: { on in model.update { $0.logPrompts = on } }))
-            TokenLibUsageRow(totals: model.usageToday, label: "Today")
+            Toggle("Enable AI", isOn: Binding(get: { model.isEnabled }, set: { model.setEnabled($0) }))
+            if model.isEnabled { configuration }
             if let error = model.lastError { Text(error).font(.caption).foregroundColor(.red) }
         }
         .onAppear {
             model.refresh()
-            provider = model.settings.activeProvider ?? .anthropic
+            provider = model.settings.activeProvider ?? model.availableProviders[0]
             localURL = model.settings.localBaseURL ?? ""
             localModel = model.settings.localModel ?? ""
         }
+    }
+
+    /// Everything below the switch: provider, its key or server or availability, activation, logging, today's usage.
+    @ViewBuilder private var configuration: some View {
+        Picker("Provider", selection: $provider) {
+            ForEach(model.availableProviders, id: \.self) { kind in
+                Text(model.hasKey(kind) ? "\(kind.displayName) ✓" : kind.displayName).tag(kind)
+            }
+        }
+        if provider.needsKey {
+            SecureField(model.hasKey(provider) ? "API key (stored; enter to replace)" : "API key", text: $key)
+                .textContentType(.password)
+                #if os(iOS) || os(tvOS)
+                .textInputAutocapitalization(.never)
+                #endif
+                .disableAutocorrection(true)
+            HStack {
+                TextField(creditPrompt, text: $credit)
+                    #if os(iOS) || os(tvOS)
+                    .keyboardType(.decimalPad)
+                    #endif
+                Button("Set") { model.setCredit(creditAmount, for: provider); credit = "" }
+                    // tvOS has .borderless only from 17, and the focus engine reaches a row's buttons anyway.
+                    #if !os(tvOS)
+                    .buttonStyle(.borderless)
+                    #endif
+                    .disabled(creditAmount == nil)
+            }
+        } else if provider == .local {
+            TextField("Server URL, e.g. http://192.168.1.20:11434/v1", text: $localURL)
+                #if os(iOS) || os(tvOS)
+                .textInputAutocapitalization(.never).keyboardType(.URL)
+                #endif
+                .disableAutocorrection(true)
+            TextField("Model name, e.g. llama3", text: $localModel)
+                #if os(iOS) || os(tvOS)
+                .textInputAutocapitalization(.never)
+                #endif
+                .disableAutocorrection(true)
+        }
+        Button(isActive ? "Active" : "Use \(provider.displayName)") {
+            if provider == .local { model.setLocalServer(url: localURL, model: localModel) }
+            model.activate(provider, key: key)
+            key = ""
+        }
+        .disabled(provider.needsKey && key.isEmpty && !model.hasKey(provider))
+        if model.hasKey(provider) {
+            Button("Remove key", role: .destructive) { model.removeKey(for: provider) }
+        }
+        Toggle("Keep prompts in the usage log", isOn: Binding(get: { model.settings.logPrompts }, set: { on in model.update { $0.logPrompts = on } }))
+        TokenLibUsageRow(totals: model.usageToday, label: "Today")
     }
 
     private var isActive: Bool { model.settings.activeProvider == provider && key.isEmpty && (!provider.needsKey || model.hasKey(provider)) }
@@ -96,7 +102,10 @@ public struct TokenLibSettingsSection: View {
     }
 
     private var footer: String {
+        if !model.isEnabled { return "AI is off: nothing is sent to any provider. Keys and settings are kept." }
+        if let reason = model.unavailableReason(for: provider) { return reason }
         if let name = model.modelName(for: .character), model.isReady { return "Characters answer with \(name)." }
+        if provider == .apple { return "Apple Intelligence answers on this device: no key, no network, nothing leaves the device." }
         return "Pick a provider and enter its API key. Keys are stored encrypted on this device. Enter the balance from the provider's billing page to see what is left; it counts this app's use only."
     }
 }
@@ -189,7 +198,7 @@ public struct TokenLibStatusBadge: View {
     public init(model: TokenLibModel) { self.model = model }
 
     public var body: some View {
-        Label(model.isReady ? (model.activeProvider?.displayName ?? "Ready") : "No AI provider", systemImage: model.isReady ? "brain" : "brain.head.profile")
+        Label(model.isReady ? (model.activeProvider?.displayName ?? "Ready") : model.isEnabled ? "No AI provider" : "AI off", systemImage: model.isReady ? "brain" : "brain.head.profile")
             .font(.caption)
             .foregroundColor(model.isReady ? .primary : .secondary)
     }

@@ -16,24 +16,25 @@ projects that adopt the library.
 
 ```
 Package.swift               products TokenLib, TokenLibApple, TokenLibUI; CSQLite system library (pkg-config sqlite3 on Linux only)
-ios/Sources/TokenLib          Catalog (ProviderKind anthropic/openai/gemini/deepseek/kimi/qwen/grok/mistral/cohere/openrouter/local,
+ios/Sources/TokenLib          Catalog (ProviderKind anthropic/openai/gemini/deepseek/kimi/qwen/grok/mistral/cohere/openrouter/apple/local,
                             ModelTier, ModelInfo, Profile
                             character/assistant/fast/vision), Chat types (ChatPart text/image, ChatMessage.parts,
                             ChatRequest.jsonSchema, ChatReply.model/provider), Transport (URLSession + SSE parser),
                             Provider protocol, Providers/{Anthropic,OpenAI,Gemini}Provider (OpenAIProvider serves every
-                            OpenAI-compatible kind through a per-kind Dialect table), Store (SecretCipher,
-                            KeyRepository, Settings, UsageRecord/UsageTotals, TokenStore, InMemoryStore),
-                            SQLiteStore (sqlite3 C API), TokenServer, TokenClient/TokenSession
-ios/Sources/TokenLibApple     KeychainCipher (CryptoKit AES-GCM, key in Keychain), TokenLibBootstrap.standard(appId:),
-                            TokenLibModel (ObservableObject over the server)
+                            OpenAI-compatible kind through a per-kind Dialect table), NativeProvider (in-process providers,
+                            filled per platform), Store (SecretCipher, KeyRepository, Settings incl. the `enabled` master
+                            switch, UsageRecord/UsageTotals, TokenStore, InMemoryStore), SQLiteStore (sqlite3 C API),
+                            TokenServer, TokenClient/TokenSession
+ios/Sources/TokenLibApple     KeychainCipher (CryptoKit AES-GCM, key in Keychain), AppleProvider (Foundation Models, iOS 26+),
+                            TokenLibBootstrap.standard(appId:) / registerPlatformProviders(on:), TokenLibModel (ObservableObject)
 ios/Sources/TokenLibUI        SwiftUI pieces: TokenLibSettingsSection, TokenLibUsageView, TokenLibUsageRow, TokenLibRemainingView, TokenLibStatusBadge
-ios/Tests/TokenLibTests       28 tests with FakeTransport and canned SSE bodies
-android/tokenlib-core         Kotlin/JVM mirror; MiniJson (no serialization dependency); JdbcSqlDatabase for tests; 28 tests
+ios/Tests/TokenLibTests       30 tests with FakeTransport and canned SSE bodies
+android/tokenlib-core         Kotlin/JVM mirror; MiniJson (no serialization dependency); JdbcSqlDatabase for tests; 30 tests
 android/tokenlib-android      AndroidSqlDatabase, KeystoreCipher, TokenLib.standard(context)
 android/tokenlib-compose      TokenLibModel (Compose state), TokenLibSettings, TokenLibUsage, TokenLibUsageRow, TokenLibRemaining, TokenLibStatusBadge
 js/                         TypeScript mirror, npm package `@apphaus/tokenlib` (Node / Workers / React Native): src/*.ts file for file
                             with ios/Sources/TokenLib, fetch + ReadableStream transport, async TokenStore, InMemoryStore,
-                            AesGcmCipher (WebCrypto, host-supplied key); no UI pieces; test/*.test.ts, 26 vitest tests
+                            AesGcmCipher (WebCrypto, host-supplied key); no UI pieces; test/*.test.ts, 28 vitest tests
 ```
 
 ## Build and test
@@ -63,6 +64,14 @@ cd js && npm ci && npm run typecheck && npm test
   Mistral, OpenRouter, local); `json_object` with the schema appended to the system prompt for
   DeepSeek and Qwen; Cohere's `{type: json_object, schema}`. OpenRouter's catalog is the Anthropic
   trio through one OpenRouter key.
+- Apple Intelligence (`ProviderKind.apple`) is the one provider that is not HTTP: `AppleProvider` in
+  TokenLibApple drives the Foundation Models framework in-process through the `NativeProvider` seam on
+  `TokenServer.nativeProviders`, which the bootstrap fills only where the framework exists (iOS 26, macOS 26,
+  visionOS 26). The kind exists in Kotlin and TypeScript so the catalogs stay in step, but nothing fills the
+  seam there, so `availableProviders` never offers it. No key, no cost, no token counts (usage is estimated),
+  text only, schema asked for in the prompt.
+- `Settings.enabled` is the master switch the settings UI shows first; off, `isReady` is false and `stream`
+  fails with `disabled` before touching a provider. Everything else in settings stays put.
 - Providers, the model catalog and profiles are opinionated code, not database rows.
   The database holds only keys (ciphertext), a few settings and usage.
 - Anthropic requests on 5-generation models send `output_config.effort` and no sampling
@@ -103,6 +112,10 @@ have to read the source to learn it, it belongs in the guide.
   need not end with a blank line.
 - Budget and daily-cap tests use exact thresholds (budget 36, cap 36); keep the fake
   usage numbers in step when changing accounting.
+- The Android build needs a JDK 17 (AGP 8.11 and the core's `jvmTarget`); `js` needs Node 20 or newer
+  for vitest 4 and a global `crypto` (on Node 18, `NODE_OPTIONS=--experimental-global-webcrypto` and an
+  older vitest work). `swift build` on macOS compiles TokenLibApple and TokenLibUI too, so it is the
+  compile check for AppleProvider and the SwiftUI pieces.
 - Work lands on `master` directly; feature branches are deleted once merged.
 - The library was TokenX until October 2026. `TokenLibBootstrap.legacyDatabase` /
   `legacyKeySuffix` (Swift) and `TokenLib.LEGACY_DATABASE` / `LEGACY_KEY_SUFFIX` (Android) keep

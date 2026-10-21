@@ -43,6 +43,8 @@ public struct Credit: Equatable, Codable {
 }
 
 public struct Settings: Equatable, Codable {
+    /// The master switch: off means no request is sent anywhere, whatever else is configured (on by default).
+    public var enabled: Bool
     /// The provider requests go to; `nil` until the app picks one.
     public var activeProvider: ProviderKind?
     /// For `.local`: the OpenAI-compatible server, e.g. `http://192.168.1.20:11434/v1`.
@@ -56,8 +58,8 @@ public struct Settings: Equatable, Codable {
     /// The balance entered per provider and the spend counted against it; empty until the user enters one.
     public var credits: [ProviderKind: Credit]
 
-    public init(activeProvider: ProviderKind? = nil, localBaseURL: String? = nil, localModel: String? = nil, dailyTokenCap: Int? = nil, logPrompts: Bool = false, credits: [ProviderKind: Credit] = [:]) {
-        self.activeProvider = activeProvider; self.localBaseURL = localBaseURL; self.localModel = localModel; self.dailyTokenCap = dailyTokenCap; self.logPrompts = logPrompts; self.credits = credits
+    public init(enabled: Bool = true, activeProvider: ProviderKind? = nil, localBaseURL: String? = nil, localModel: String? = nil, dailyTokenCap: Int? = nil, logPrompts: Bool = false, credits: [ProviderKind: Credit] = [:]) {
+        self.enabled = enabled; self.activeProvider = activeProvider; self.localBaseURL = localBaseURL; self.localModel = localModel; self.dailyTokenCap = dailyTokenCap; self.logPrompts = logPrompts; self.credits = credits
     }
 }
 

@@ -22,6 +22,8 @@ interface TokenBroker {
 class TokenServer(val store: TokenStore, val cipher: SecretCipher, val transport: HttpTransport = HttpUrlConnectionTransport()) : TokenBroker {
     /** Overrides the catalog's providers (tests inject fakes). */
     val providers = HashMap<ProviderKind, Provider>()
+    /** In-process providers by kind, registered per platform; a native kind with no entry here is not offered. */
+    val nativeProviders = HashMap<ProviderKind, NativeProvider>()
     /** The start of "today" for the daily cap, epoch milliseconds; midnight local time by default. */
     var dayStart: () -> Long = { Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis }
 
@@ -67,11 +69,35 @@ class TokenServer(val store: TokenStore, val cipher: SecretCipher, val transport
         update { it.copy(activeProvider = provider) }
     }
 
+    /** Turns every request on or off; `Settings.enabled` underneath. */
+    fun setEnabled(on: Boolean) = update { it.copy(enabled = on) }
+
+    val isEnabled: Boolean get() = settings.enabled
+
     override val isReady: Boolean
         get() {
-            val p = settings.activeProvider ?: return false
-            return if (p == ProviderKind.LOCAL) settings.localBaseUrl != null else hasKey(p)
+            val s = settings
+            if (!s.enabled) return false
+            val p = s.activeProvider ?: return false
+            return when {
+                p.isNative -> nativeProviders[p]?.isAvailable ?: false
+                p == ProviderKind.LOCAL -> s.localBaseUrl != null
+                else -> hasKey(p)
+            }
         }
+
+    /** The kinds a settings screen offers on this device: every HTTP provider, plus the native ones registered here. */
+    val availableProviders: List<ProviderKind> get() = ProviderKind.entries.filter { !it.isNative || nativeProviders.containsKey(it) }
+
+    /**
+     * Why a native provider cannot answer right now, or that this build has none; `null` for HTTP providers and for
+     * a native one that is available.
+     */
+    fun unavailableReason(kind: ProviderKind): String? {
+        if (!kind.isNative) return null
+        val native = nativeProviders[kind] ?: return "${kind.displayName} is not available on this platform."
+        return native.unavailableReason
+    }
 
     /** The model a profile will run on right now. */
     fun model(profile: Profile): ModelInfo? {
@@ -97,15 +123,14 @@ class TokenServer(val store: TokenStore, val cipher: SecretCipher, val transport
 
     override fun stream(request: ChatRequest, profile: Profile, consumer: String, onEvent: (ChatEvent) -> Unit, completion: (Result<ChatReply>) -> Unit): Cancellable {
         val settings = this.settings
+        if (!settings.enabled) return failed(TokenLibException.Disabled, completion)
         val kind = settings.activeProvider ?: return failed(TokenLibException.NoProvider, completion)
         settings.dailyTokenCap?.let { cap -> if (usageToday().totalTokens + request.estimatedPromptTokens >= cap) return failed(TokenLibException.DailyCapReached, completion) }
         val key = try { key(kind) } catch (e: Exception) { return failed(TokenLibException.Transport(e.message ?: e.toString()), completion) }
         if (kind.needsKey && key == null) return failed(TokenLibException.MissingKey(kind), completion)
         val model = model(profile) ?: return failed(TokenLibException.NoProvider, completion)
-        val provider = providers[kind] ?: Providers.provider(kind)
         val call = ProviderCall(model, key, settings.localBaseUrl, profile)
-        val http = try { provider.request(request, call) } catch (e: TokenLibException) { return failed(e, completion) } catch (e: Exception) { return failed(TokenLibException.Transport(e.message ?: e.toString()), completion) }
-        val parser = provider.makeParser()
+        // Everything after the provider answers is the same for both paths: fill in estimates, record usage, charge credit.
         val text = StringBuilder()
         var done: ChatEvent.Done? = null
         val deliver: (ChatEvent) -> Unit = { event ->
@@ -115,9 +140,8 @@ class TokenServer(val store: TokenStore, val cipher: SecretCipher, val transport
             }
             onEvent(event)
         }
-        return transport.stream(http, onStatus = {}, onLine = { line -> parser.feed(line).forEach(deliver) }, completion = { result ->
+        val finish: (Result<Unit>) -> Unit = { result ->
             result.fold(onFailure = { completion(Result.failure(it)) }, onSuccess = {
-                parser.finish().forEach(deliver)
                 val reply = text.toString()
                 var usage = done?.usage ?: Usage()
                 val stop = done?.stop ?: StopReason.OTHER
@@ -132,6 +156,17 @@ class TokenServer(val store: TokenStore, val cipher: SecretCipher, val transport
                 }
                 completion(Result.success(ChatReply(reply, usage, stop, model.id, kind)))
             })
+        }
+        if (kind.isNative) {
+            val native = nativeProviders[kind]?.takeIf { it.isAvailable } ?: return failed(TokenLibException.Unavailable(kind), completion)
+            return native.stream(request, call, deliver, finish)
+        }
+        val provider = providers[kind] ?: Providers.provider(kind)
+        val http = try { provider.request(request, call) } catch (e: TokenLibException) { return failed(e, completion) } catch (e: Exception) { return failed(TokenLibException.Transport(e.message ?: e.toString()), completion) }
+        val parser = provider.makeParser()
+        return transport.stream(http, onStatus = {}, onLine = { line -> parser.feed(line).forEach(deliver) }, completion = { result ->
+            if (result.isSuccess) parser.finish().forEach(deliver)
+            finish(result)
         })
     }
 

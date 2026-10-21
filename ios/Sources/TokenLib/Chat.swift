@@ -99,8 +99,12 @@ public struct ChatReply: Equatable {
 }
 
 public enum TokenLibError: Error, Equatable, CustomStringConvertible {
+    /// `Settings.enabled` is off: nothing is sent anywhere.
+    case disabled
     case noProvider
     case missingKey(ProviderKind)
+    /// A native provider (Apple Intelligence) is active but cannot answer on this device or build.
+    case unavailable(ProviderKind)
     case budgetExhausted
     case dailyCapReached
     case http(status: Int, body: String)
@@ -110,8 +114,10 @@ public enum TokenLibError: Error, Equatable, CustomStringConvertible {
 
     public var description: String {
         switch self {
+        case .disabled: return "AI is turned off"
         case .noProvider: return "no AI provider is configured"
         case .missingKey(let p): return "no API key for \(p.displayName)"
+        case .unavailable(let p): return "\(p.displayName) is not available on this device"
         case .budgetExhausted: return "the session's token budget is spent"
         case .dailyCapReached: return "the daily token cap is reached"
         case .http(let s, let b): return "HTTP \(s): \(b.prefix(200))"

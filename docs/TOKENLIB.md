@@ -54,8 +54,8 @@ const reply = await session.stream({ system: persona, messages: [ChatMessage.use
   tokens) and a `StopReason` (`end`, `maxTokens`, `refusal`, `other`). The
   `ChatReply` also names the `model` and `provider` that answered, for the
   consumer's records; consumers still never choose them.
-- Errors: `noProvider`, `missingKey`, `budgetExhausted`, `dailyCapReached`,
-  `http(status, body)`, `transport`, `cancelled`.
+- Errors: `disabled`, `noProvider`, `missingKey`, `unavailable`, `budgetExhausted`,
+  `dailyCapReached`, `http(status, body)`, `transport`, `cancelled`.
 
 `TokenBroker` is the interface between the halves. `TokenServer` implements
 it in-process; a remote or out-of-process broker would implement the same
@@ -70,13 +70,14 @@ The store holds only:
 | table | rows |
 | --- | --- |
 | `keys` | provider → API key ciphertext |
-| `settings` | active provider, local server URL and model, daily token cap, whether prompts are logged, the credit entered per provider |
+| `settings` | the master switch, active provider, local server URL and model, daily token cap, whether prompts are logged, the credit entered per provider |
 | `usage` | one row per request: time, consumer, profile, provider, model, prompt and reply tokens, cost in micro-dollars, stop reason, optional prompt and reply text |
 
 ```swift
 let server = TokenServer(store: try SQLiteStore(path: dbPath), cipher: KeychainCipher())
 try server.activate(.anthropic, key: keyFromTheUser)    // stores the key encrypted, makes it active
-server.isReady                                           // a provider is active and has what it needs
+server.isReady                                           // AI is on, a provider is active and has what it needs
+try server.setEnabled(false)                             // the master switch: off, nothing is sent and isReady is false
 server.model(for: .character)                            // what would run right now
 server.usageToday(), server.recentUsage(limit: 50)       // for the usage screen
 server.remainingToday()                                  // tokens left under the daily cap; nil without one
@@ -85,9 +86,10 @@ server.credit()?.remainingMicros                         // that balance minus w
 try server.update { $0.dailyTokenCap = 200_000 }
 ```
 
-Queries for lists and options come from the server (`configuredProviders`,
-`ProviderKind.allCases`, `Catalog.models(for:)`, `usage(since:consumer:)`),
-so an app can draw its own UI. Most apps will not need to:
+Queries for lists and options come from the server (`availableProviders`,
+`configuredProviders`, `unavailableReason(for:)`, `ProviderKind.allCases`,
+`Catalog.models(for:)`, `usage(since:consumer:)`), so an app can draw its own
+UI. Most apps will not need to:
 
 ### Bootstrap, model and UI pieces
 
@@ -100,6 +102,8 @@ let ai = TokenLibModel(appId: "us.apphaus.myapp")     // TokenLibBootstrap.stand
 ai.settings, ai.configured, ai.usageToday, ai.recent, ai.lastError   // @Published
 ai.activate(.anthropic, key: text); ai.removeKey(for: .openai); ai.update { $0.dailyTokenCap = 200_000 }
 ai.setLocalServer(url: "http://host:11434/v1", model: "llama3"); ai.clearUsage()
+ai.setEnabled(false); ai.isEnabled               // the master switch
+ai.availableProviders; ai.unavailableReason(for: .apple)   // what to offer here, and why Apple Intelligence cannot answer
 ai.isReady; ai.modelName(for: .character)         // "Claude Opus 5.5 (Anthropic)"
 ai.client.session(consumer: "bush", profile: .character, budget: 20_000)
 ```
@@ -116,7 +120,7 @@ host's theme and bring no navigation or branding:
 
 | piece | SwiftUI | Compose |
 | --- | --- | --- |
-| provider picker, key entry, local server URL and model, activate / remove key, prompt logging, today's usage, active model line | `TokenLibSettingsSection(model:title:)` inside a `Form` | `TokenLibSettings(model, modifier, title)` inside a `Column` |
+| the master switch, provider picker, key entry, local server URL and model, activate / remove key, prompt logging, today's usage, active model line or why Apple Intelligence cannot answer | `TokenLibSettingsSection(model:title:)` inside a `Form` | `TokenLibSettings(model, modifier, title)` inside a `Column` |
 | today's and 30-day totals, recent requests, clear | `TokenLibUsageView(model:)` | `TokenLibUsage(model, modifier)` |
 | one line of totals | `TokenLibUsageRow(totals:label:)` | `TokenLibUsageRow(label, totals)` |
 | what is left, for a main screen: the credit entered counted down by this app's spend, else tokens remaining under the daily cap, else today's totals | `TokenLibRemainingView(model:)` | `TokenLibRemaining(model, modifier)` |
@@ -146,7 +150,10 @@ INTEGRATION.md section 11.
 
 Providers are plain HTTPS with server-sent events; no vendor SDKs, so Swift,
 Kotlin and TypeScript behave identically and the core is testable with a fake
-transport.
+transport. The one exception answers in-process: Apple's on-device model goes
+through the `NativeProvider` seam (`TokenServer.nativeProviders`), which the
+Apple bootstrap fills and the server treats like any other provider for
+accounting, caps and credit.
 
 | provider | endpoint | images | JSON schema | notes |
 | --- | --- | --- | --- | --- |
@@ -161,6 +168,7 @@ transport.
 | Cohere | `https://api.cohere.com/compatibility/v1/chat/completions`, Cohere's OpenAI compatibility API | `image_url` data URIs (Command A+; not documented for the compatibility API) | `response_format: {type: json_object, schema}` | `max_tokens`, temperature; `reasoning_effort` `none` or `high` on Command A+ and the reasoning models; no `stream_options`, usage is estimated when the stream carries none |
 | OpenRouter | `https://openrouter.ai/api/v1/chat/completions`, OpenAI-compatible | `image_url` data URIs | `response_format` `json_schema` | `max_tokens`, no temperature (it depends on the routed model); effort sets `reasoning` `{enabled: false}` or `{effort: high}`; usage comes in the last chunk unasked |
 | local | an OpenAI-compatible server (Ollama, LM Studio, vLLM) at `Settings.localBaseURL`; no key | as OpenAI | as OpenAI | model name from `Settings.localModel` |
+| Apple Intelligence | in-process, the Foundation Models framework (`LanguageModelSession`) on iOS 26, macOS 26, visionOS 26; no key, no network | dropped (text only) | asked for in the instructions, not enforced | `AppleProvider` in TokenLibApple, registered by `TokenLibBootstrap`; system prompt as instructions, earlier turns as the transcript, temperature and `maximumResponseTokens` from the profile; no token counts, so usage is estimated; guardrail and refusal errors become the `refusal` stop; offered only where `SystemLanguageModel.default` reports available, with the reason otherwise |
 
 The OpenAI-compatible vendors share one provider with a per-vendor dialect:
 endpoint, token parameter, whether a temperature is sent, how usage is asked
@@ -183,14 +191,17 @@ aliases of Large (best, $0.50 / $1.50), Medium (balanced, $1.50 / $7.50) and
 Small (fast, $0.15 / $0.60); Cohere has Command A+ (best, $0.30 / $1.50, images),
 Command A (balanced, $2.50 / $10) and Command R7B (fast, $0.0375 / $0.15);
 OpenRouter carries the Anthropic trio at OpenRouter's prices, so one OpenRouter
-key gives the same opinion. A provider without a tier serves the nearest one it
-has. A profile asks for a tier; the
-active provider's model of that tier serves it (or the nearest tier the
-provider has). Editing the catalog is a code change on purpose: it is the
-opinion TokenLib ships with.
+key gives the same opinion. Apple Intelligence is one free text-only model (`apple-on-device`, a 4k-token
+window) that serves every profile. A provider without a tier serves the nearest
+one it has. A profile asks for a tier; the active provider's model of that tier
+serves it (or the nearest tier the provider has). Editing the catalog is a code
+change on purpose: it is the opinion TokenLib ships with.
 
 ### Policy
 
+- **The master switch**: `Settings.enabled`, on by default. Off, `isReady` is
+  false and every request fails with `disabled` before anything is sent; the rest
+  of the settings and the usage ledger are untouched.
 - **Daily cap**: `Settings.dailyTokenCap` across every consumer; checked
   against today's usage plus the request's estimated prompt before sending.
 - **Session budget**: per `TokenSession`, checked the same way.
@@ -209,16 +220,16 @@ opinion TokenLib ships with.
 ```
 docs/TOKENLIB.md            this reference; docs/INTEGRATION.md the adopter's guide
 Package.swift             Swift manifest (root, so SwiftPM can add the package by URL)
-ios/Sources/TokenLib        catalog, chat types, transport, providers, store, SQLiteStore, server, client
-ios/Sources/TokenLibApple   KeychainCipher, TokenLibBootstrap.standard(appId:), TokenLibModel (ObservableObject)
+ios/Sources/TokenLib        catalog, chat types, transport, providers (HTTP and the NativeProvider seam), store, SQLiteStore, server, client
+ios/Sources/TokenLibApple   KeychainCipher, AppleProvider (Foundation Models), TokenLibBootstrap.standard(appId:), TokenLibModel (ObservableObject)
 ios/Sources/TokenLibUI      TokenLibSettingsSection, TokenLibUsageView, TokenLibUsageRow, TokenLibRemainingView, TokenLibStatusBadge (SwiftUI)
 ios/Sources/CSQLite       sqlite3 module map for Linux
-ios/Tests/TokenLibTests     28 tests with a fake transport and an in-memory / temp SQLite store
-android/tokenlib-core       Kotlin/JVM mirror (JDBC SQLite for desktop and tests), 28 tests
+ios/Tests/TokenLibTests     30 tests with a fake transport and an in-memory / temp SQLite store
+android/tokenlib-core       Kotlin/JVM mirror (JDBC SQLite for desktop and tests), 30 tests
 android/tokenlib-android    AndroidSqlDatabase, KeystoreCipher, TokenLib.standard(context)
 android/tokenlib-compose    TokenLibModel (Compose state), TokenLibSettings, TokenLibUsage, TokenLibUsageRow, TokenLibRemaining, TokenLibStatusBadge
 js/                       TypeScript mirror, npm `@apphaus/tokenlib`: src/*.ts file for file with ios/Sources/TokenLib, fetch transport,
-                          async TokenStore, AesGcmCipher; no UI pieces; 26 vitest tests
+                          async TokenStore, AesGcmCipher; no UI pieces; 28 vitest tests
 ```
 
 | platform | package | secrets |
