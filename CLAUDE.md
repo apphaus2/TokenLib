@@ -112,9 +112,13 @@ have to read the source to learn it, it belongs in the guide.
   need not end with a blank line.
 - Budget and daily-cap tests use exact thresholds (budget 36, cap 36); keep the fake
   usage numbers in step when changing accounting.
-- The Android build needs a JDK 17 (AGP 8.11 and the core's `jvmTarget`); `js` needs Node 20 or newer
-  for vitest 4 and a global `crypto` (on Node 18, `NODE_OPTIONS=--experimental-global-webcrypto` and an
-  older vitest work). `swift build` on macOS compiles TokenLibApple and TokenLibUI too, so it is the
+- The Android build needs a JDK 17 or newer (AGP 8.11; the core still targets 17 bytecode) and an
+  Android SDK with platform 35 or newer, found through `ANDROID_HOME` or a gitignored
+  `android/local.properties` with `sdk.dir=/path/to/sdk` (Android Studio's is `~/Library/Android/sdk`).
+  `./gradlew :tokenlib-core:test` runs the 30 JVM tests without any SDK. Don't add JDK toolchain or
+  SDK plumbing to the build files here; consumers adapt their subtree copy to their machines. `js`
+  needs Node 20 or newer for vitest 4 and a global `crypto` (on Node 18,
+  `NODE_OPTIONS=--experimental-global-webcrypto` and an older vitest work). `swift build` on macOS compiles TokenLibApple and TokenLibUI too, so it is the
   compile check for AppleProvider and the SwiftUI pieces.
 - Work lands on `master` directly; feature branches are deleted once merged.
 - The library was TokenX until October 2026. `TokenLibBootstrap.legacyDatabase` /
